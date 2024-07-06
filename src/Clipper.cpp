@@ -82,39 +82,44 @@ namespace ReplayClipper {
         }
         ImGui::End();
 
-
         m_VideoTime += ts;
-        AVFrame* frame = m_Video.NextFrame();
 
-        if (frame == nullptr) {
-            std::cout << "End of video " << m_VideoTime << std::endl;
-            m_VideoTime = 0.0F;
-            m_Video.Seek(0.0);
-            frame = m_Video.NextFrame();
-            assert(frame && "Video Frame should not be null");
-        }
+        constexpr float FRAMERATE = 1.0F / 60.0F;
+        while (m_VideoTime >= FRAMERATE) {
+            m_VideoTime -= FRAMERATE;
+            AVFrame* frame = m_Video.NextFrame();
 
-        glBindTexture(GL_TEXTURE_2D, m_Texture);
-        std::vector<uint8_t> pixel_data{};
-        int width = frame->width;
-        int height = frame->height;
-        pixel_data.reserve(width * height * 3);
-        pixel_data.clear();
-
-        uint8_t* buf = frame->data[0];
-        size_t stride = frame->linesize[0];
-
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                uint8_t grey = buf[y * stride + x];
-                pixel_data.push_back(grey);
-                pixel_data.push_back(grey);
-                pixel_data.push_back(grey);
+            if (frame == nullptr) {
+                std::cout << "End of video " << m_VideoTime << std::endl;
+                m_VideoTime = 0.0F;
+                m_Video.Seek(0.0);
+                frame = m_Video.NextFrame();
+                assert(frame && "Video Frame should not be null");
             }
-        }
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixel_data.data());
-        glBindTexture(GL_TEXTURE_2D, 0);
+            glBindTexture(GL_TEXTURE_2D, m_Texture);
+            int width = frame->width;
+            int height = frame->height;
+            uint8_t* buf = frame->data[0];
+
+            struct Pixel {
+                uint8_t Red, Green, Blue;
+            };
+
+            static std::vector<Pixel> pixels{};
+            pixels.resize(width * height);
+
+            for (int y = 0; y < height; ++y) {
+                for (int x = 0; x < width; ++x) {
+                    size_t index = frame->linesize[0] * y + x;
+                    uint8_t g = buf[index];
+                    pixels[index] = Pixel{g, g, g};
+                }
+            }
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
 
         if (ImGui::Begin("Video Player")) {
             ImGui::Image((void*) (intptr_t) m_Texture, ImGui::GetContentRegionAvail());
