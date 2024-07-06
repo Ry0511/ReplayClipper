@@ -20,7 +20,23 @@ namespace ReplayClipper {
     }
 
     void Clipper::OnStart() {
-        gTree.InitRoot("G:/Dev/CLion/ReplayClipper/bin");
+        fs::path working_dir = fs::absolute(fs::path{"../"}).parent_path();
+        fs::path bin = working_dir;
+
+        bool bin_not_found = true;
+        while (bin.has_parent_path() && bin_not_found) {
+            std::cout << "[DIR] ~ " << bin.filename() << std::endl;
+            bin = bin.parent_path();
+            bin_not_found = (bin.filename() == "bin");
+        }
+
+        assert(!working_dir.filename().empty());
+
+        if (bin_not_found) {
+            gTree.InitRoot(working_dir);
+        } else {
+            gTree.InitRoot(bin / "bin");
+        }
 
         glGenTextures(1, &m_Texture);
         glBindTexture(GL_TEXTURE_2D, m_Texture);
