@@ -17,8 +17,12 @@
 namespace ReplayClipper {
 
     struct Metrics {
+      public:
         float Framerate;
         size_t FrameCount;
+
+      public:
+        Metrics();
     };
 
     class Application {
@@ -26,6 +30,9 @@ namespace ReplayClipper {
       private:
         GLFWwindow* m_Window;
         Metrics m_Metrics;
+
+      public:
+        static Application* s_Active;
 
       public:
         Application() = default;

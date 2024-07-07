@@ -97,6 +97,10 @@ namespace ReplayClipper {
                 assert(frame && "Video Frame should not be null");
             }
 
+            if (m_VideoTime >= FRAMERATE) {
+                continue;
+            }
+
             glBindTexture(GL_TEXTURE_2D, m_Texture);
             int width = frame->width;
             int height = frame->height;

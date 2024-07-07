@@ -20,6 +20,10 @@ namespace ReplayClipper {
     using Instant = std::chrono::steady_clock::time_point;
     using FloatDuration = std::chrono::duration<float>;
 
+    //############################################################################//
+    // | APPLICATION |
+    //############################################################################//
+
     static int Initialise(GLFWwindow** window, int width, int height, const char* title) noexcept {
         // Init GLFW & Create Window
         int success = glfwInit();
@@ -51,6 +55,7 @@ namespace ReplayClipper {
 
     int Application::StartInternal(int width, int height, const char* title) {
         Initialise(&m_Window, width, height, title);
+        s_Active = this;
 
         this->OnStart();
 
