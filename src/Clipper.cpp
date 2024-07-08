@@ -20,23 +20,8 @@ namespace ReplayClipper {
     }
 
     void Clipper::OnStart() {
-        fs::path working_dir = fs::absolute(fs::path{"../"}).parent_path();
-        fs::path bin = working_dir;
-
-        bool bin_not_found = true;
-        while (bin.has_parent_path() && bin_not_found) {
-            std::cout << "[DIR] ~ " << bin.filename() << std::endl;
-            bin = bin.parent_path();
-            bin_not_found = (bin.filename() == "bin");
-        }
-
-        assert(!working_dir.filename().empty());
-
-        if (bin_not_found) {
-            gTree.InitRoot(working_dir);
-        } else {
-            gTree.InitRoot(bin / "bin");
-        }
+        fs::path working_dir = fs::absolute(fs::path{"./"}).parent_path();
+        gTree.InitRoot(working_dir / "res");
 
         glGenTextures(1, &m_FrontTexture);
         glBindTexture(GL_TEXTURE_2D, m_FrontTexture);
@@ -56,7 +41,6 @@ namespace ReplayClipper {
         m_VideoTime = 0.0F;
         m_CopyToFront = false;
         m_PixelData = {};
-        m_PixelData.resize(1920 * 1080);
         bool ok = m_Video.OpenFile("res/1.mp4");
         assert(ok && "Failed to open file");
 
@@ -69,7 +53,7 @@ namespace ReplayClipper {
 
         if (ImGui::Begin("File Tree")) {
             struct {
-                void ImFileTree(const FileTree::Node& node) {
+                void ImFileTree(const FileTree::Node& node, std::function<void(const fs::path&)> fn) {
 
                     constexpr auto LEAF_NODE_FLAGS = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
                     std::string node_path = node.Path.filename().generic_string();
@@ -80,11 +64,11 @@ namespace ReplayClipper {
                                 std::string child_path = child.Path.filename().generic_string();
                                 if (ImGui::TreeNodeEx(child_path.c_str(), LEAF_NODE_FLAGS)) {
                                     if (ImGui::IsItemClicked()) {
-                                        std::cout << "Clicked ~ '" << child.Path.generic_string() << "'" << std::endl;
+                                        fn(child.Path);
                                     }
                                 }
                             } else {
-                                ImFileTree(child);
+                                ImFileTree(child, fn);
                             }
                         }
                         ImGui::TreePop();
@@ -92,7 +76,17 @@ namespace ReplayClipper {
                 }
             } walker;
 
-            walker.ImFileTree(gTree.Root());
+            walker.ImFileTree(
+                    gTree.Root(),
+                    [this](const fs::path& path) {
+                        if (!fs::is_regular_file(path) || path.extension() != ".mp4") {
+                            return;
+                        }
+                        std::unique_lock guard{m_VideoMutex};
+                        bool success = m_Video.OpenFile(path);
+                        assert(success);
+                    }
+            );
         }
         ImGui::End();
 
@@ -139,6 +133,7 @@ namespace ReplayClipper {
 
             while (clipper->m_VideoTime >= FRAMERATE) {
                 clipper->m_VideoTime -= FRAMERATE;
+                std::unique_lock guard{clipper->m_VideoMutex};
 
                 VideoFile::Frame frame = clipper->m_Video.NextFrame();
 

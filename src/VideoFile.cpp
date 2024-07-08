@@ -86,7 +86,6 @@ namespace ReplayClipper {
     }
 
     void VideoFile::Frame::CopyInto(std::vector<Pixel>& pixels) {
-
         int width = Width();
         int height = Height();
         assert(width > 0 && height > 0);
@@ -105,8 +104,8 @@ namespace ReplayClipper {
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
                 const uint8_t Y = data[0][lines[0] * y + x];
-                const uint8_t U = data[1][lines[1] * y / 2 + x / 2];
-                const uint8_t V = data[2][lines[2] * y / 2 + x / 2];
+                const uint8_t U = data[1][lines[1] * (y >> 1) + (x >> 1)];
+                const uint8_t V = data[2][lines[2] * (y >> 1) + (x >> 1)];
 
                 int C = Y - 16;
                 int D = U - 128;

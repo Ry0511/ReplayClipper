@@ -19,6 +19,7 @@ namespace ReplayClipper {
         float m_VideoTime;
 
       public:
+        std::mutex m_VideoMutex;
         std::thread m_VideoProcessingThread;
         bool m_ShutdownSignal;
         std::vector<Pixel> m_PixelData;
