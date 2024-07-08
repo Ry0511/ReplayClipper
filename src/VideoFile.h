@@ -10,38 +10,59 @@
 #include <filesystem>
 #include <memory>
 
-extern "C" {
-#include <libavutil/avutil.h>
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-#include <libavutil/pixdesc.h>
-};
+struct AVFrame;
 
 namespace ReplayClipper {
 
     namespace fs = std::filesystem;
 
+    struct Pixel {
+        uint8_t Red, Green, Blue;
+    };
+
     class VideoFile {
 
+      public:
+        class Frame {
+
+          public:
+            constexpr static int FRAME_TYPE_UNKNOWN = 0;
+            constexpr static int FRAME_TYPE_EOF = 1;
+            constexpr static int FRAME_TYPE_VIDEO = 2;
+            constexpr static int FRAME_TYPE_AUDIO = 3;
+
+          private:
+            AVFrame* m_Frame;
+            int m_FrameType;
+
+          public:
+            Frame(AVFrame* frame, int frame_type) : m_Frame(frame), m_FrameType(frame_type) {
+
+            }
+
+          public:
+            inline bool IsValid() const noexcept {
+                return m_Frame != nullptr;
+            }
+            inline bool IsVideoFrame() {
+                return m_Frame != nullptr && m_FrameType == FRAME_TYPE_VIDEO;
+            }
+            inline bool IsAudioFrame() {
+                return m_Frame != nullptr && m_FrameType == FRAME_TYPE_AUDIO;
+            }
+            inline bool IsEOF() const noexcept {
+                return m_FrameType == FRAME_TYPE_EOF;
+            }
+
+          public:
+            int Width();
+            int Height();
+            void CopyInto(std::vector<Pixel>& pixels);
+        };
+
       private:
-        struct ffmpeg_context_t {
-            AVFormatContext* FormatContext = nullptr;
-        };
-
-        struct ffmpeg_stream_t {
-            AVCodecContext* CodecContext = nullptr;
-            int StreamIndex = -1;
-        };
-
-        struct ffmpeg_packet_t {
-            AVPacket* Packet;
-            AVFrame* Frame;
-        };
-
-      private:
-        std::unique_ptr<ffmpeg_context_t> m_Context;
-        std::unique_ptr<ffmpeg_stream_t> m_VideoStream;
-        std::unique_ptr<ffmpeg_packet_t> m_Stream;
+        class Impl;
+        std::unique_ptr<Impl> m_Impl;
 
       public:
         VideoFile();
@@ -51,8 +72,8 @@ namespace ReplayClipper {
         bool OpenFile(const fs::path& path);
 
       public:
-        void Seek(double seconds);
-        AVFrame* NextFrame();
+        bool Seek(double seconds);
+        Frame NextFrame();
     };
 
 } // ReplayClipper

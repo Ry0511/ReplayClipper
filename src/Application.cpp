@@ -24,6 +24,8 @@ namespace ReplayClipper {
     // | APPLICATION |
     //############################################################################//
 
+    Application* Application::s_Active = nullptr;
+
     static int Initialise(GLFWwindow** window, int width, int height, const char* title) noexcept {
         // Init GLFW & Create Window
         int success = glfwInit();

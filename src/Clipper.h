@@ -15,9 +15,16 @@ namespace ReplayClipper {
     class Clipper : public Application {
 
       private:
-        unsigned int m_Texture;
         VideoFile m_Video;
         float m_VideoTime;
+
+      public:
+        std::thread m_VideoProcessingThread;
+        bool m_ShutdownSignal;
+        std::vector<Pixel> m_PixelData;
+        bool m_CopyToFront;
+        int m_Width, m_Height;
+        unsigned int m_FrontTexture, m_BackTexture;
 
       public:
         virtual ~Clipper() override = default;
@@ -28,6 +35,9 @@ namespace ReplayClipper {
         virtual void OnStart() override;
         virtual bool OnUpdate(float ts) override;
         virtual void OnShutdown() override;
+
+      protected:
+        static void ProcessVideo(Clipper* app);
     };
 
 } // ReplayClipper
