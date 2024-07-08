@@ -111,6 +111,14 @@ namespace ReplayClipper {
         return 0;
     }
 
+    void Application::OnImGui(float ts) {
+        if (ImGui::Begin("Metrics")) {
+            ImGui::Text("Frame %llu", m_Metrics.FrameCount);
+            ImGui::Text("Framerate %.2f", m_Metrics.Framerate);
+        }
+        ImGui::End();
+    }
+
     void Application::SetWindowSize(int width, int height) {
 
     }

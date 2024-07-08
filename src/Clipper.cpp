@@ -49,7 +49,7 @@ namespace ReplayClipper {
     }
 
     void Clipper::OnImGui(float ts) {
-
+        this->Application::OnImGui(ts);
 
         if (ImGui::Begin("File Tree")) {
             struct {
@@ -90,19 +90,22 @@ namespace ReplayClipper {
         }
         ImGui::End();
 
-        m_VideoTime += ts;
-        if (ImGui::Begin("Video Player")) {
+        {
+            std::unique_lock guard{m_VideoMutex};
+            m_VideoTime += ts;
+            if (ImGui::Begin("Video Player")) {
 
-            if (m_CopyToFront) {
-                glBindTexture(GL_TEXTURE_2D, m_FrontTexture);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_Width, m_Height, 0, GL_RGB, GL_UNSIGNED_BYTE, m_PixelData.data());
-                glBindTexture(GL_TEXTURE_2D, 0);
-                m_CopyToFront = false;
+                if (m_CopyToFront) {
+                    glBindTexture(GL_TEXTURE_2D, m_FrontTexture);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m_Width, m_Height, 0, GL_RGB, GL_UNSIGNED_BYTE, m_PixelData.data());
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    m_CopyToFront = false;
+                }
+
+                ImGui::Image((void*) (intptr_t) m_FrontTexture, ImGui::GetContentRegionAvail());
             }
-
-            ImGui::Image((void*) (intptr_t) m_FrontTexture, ImGui::GetContentRegionAvail());
+            ImGui::End();
         }
-        ImGui::End();
 
         if (ImGui::Begin("Jobs")) {
 

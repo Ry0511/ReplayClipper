@@ -52,7 +52,7 @@ namespace ReplayClipper {
         void SetWindowPos(int x, int y);
 
       protected:
-        virtual void OnImGui(float ts) = 0;
+        virtual void OnImGui(float ts);
         virtual void OnStart() = 0;
         virtual bool OnUpdate(float ts) = 0;
         virtual void OnShutdown() = 0;
