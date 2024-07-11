@@ -9,6 +9,7 @@ target_sources(
         ReplayClipper
         PRIVATE
         src/Application.cpp
+        src/AudioManager.cpp
         src/Clipper.cpp
         src/FileTree.cpp
         src/VideoFile.cpp
@@ -42,3 +43,6 @@ find_package(FFMPEG REQUIRED)
 target_include_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_LIBRARY_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${FFMPEG_LIBRARIES})
+
+find_package(RtAudio CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE RtAudio::rtaudio)

@@ -120,6 +120,35 @@ namespace ReplayClipper {
         }
     }
 
+    void VideoFile::Frame::CopyInto(std::vector<uint8_t>& audio) {
+        assert(IsAudioFrame());
+        assert(m_Frame->format == AV_SAMPLE_FMT_FLTP);
+        assert(m_Frame != nullptr);
+
+        // Determine number of bytes per sample
+        int bytes_per_sample = av_get_bytes_per_sample(static_cast<AVSampleFormat>(m_Frame->format));
+        if (bytes_per_sample < 0) {
+            std::cerr << "Unsupported sample format" << std::endl;
+            return;
+        }
+
+        // Prepare the destination vector with the correct size
+        size_t total_bytes = m_Frame->nb_samples * m_Frame->ch_layout.nb_channels * bytes_per_sample;
+        audio.resize(total_bytes);
+
+        if (av_sample_fmt_is_planar(static_cast<AVSampleFormat>(m_Frame->format)) == 1) {
+            for (int sample_index = 0; sample_index < m_Frame->nb_samples; ++sample_index) {
+                for (int channel_index = 0; channel_index < m_Frame->ch_layout.nb_channels; ++channel_index) {
+                    uint8_t* src = m_Frame->data[channel_index] + sample_index * bytes_per_sample;
+                    uint8_t* dest = audio.data() + (sample_index * m_Frame->ch_layout.nb_channels + channel_index) * bytes_per_sample;
+                    std::memcpy(dest, src, bytes_per_sample);
+                }
+            }
+        } else {
+            std::memcpy(audio.data(), m_Frame->data[0], total_bytes);
+        }
+    }
+
     //############################################################################//
     // | VIDEO FILE |
     //############################################################################//

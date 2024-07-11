@@ -58,6 +58,9 @@ namespace ReplayClipper {
             int Width();
             int Height();
             void CopyInto(std::vector<Pixel>& pixels);
+
+          public:
+            void CopyInto(std::vector<uint8_t>& audio);
         };
 
       private:

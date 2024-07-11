@@ -7,6 +7,8 @@
 #ifndef REPLAYCLIPPER_APPLICATION_H
 #define REPLAYCLIPPER_APPLICATION_H
 
+#include "AudioManager.h"
+
 #include "glad/glad.h"
 
 #define IMGUI_HAS_DOCK

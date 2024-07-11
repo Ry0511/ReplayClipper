@@ -141,6 +141,16 @@ namespace ReplayClipper {
                 VideoFile::Frame frame = clipper->m_Video.NextFrame();
 
                 while (!frame.IsVideoFrame()) {
+
+                    if (frame.IsAudioFrame()) {
+                        // TODO: Find out how to implement infinite memory lmao
+                        static std::vector<std::vector<uint8_t>> audio_data{};
+                        std::vector<uint8_t>& audio = audio_data.emplace_back();
+                        frame.CopyInto(audio);
+                        AudioManager::EnqueueOnce(audio.data(), audio.size());
+                        AudioManager::Resume();
+                    }
+
                     if (frame.IsEOF() || !frame.IsValid()) {
                         clipper->m_Video.Seek(0.0);
                     }
