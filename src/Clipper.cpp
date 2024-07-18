@@ -31,6 +31,9 @@ namespace ReplayClipper {
         assert(m_Stream.OpenStream("res/1.mp4"));
         m_CurrentFrame = m_Stream.NextFrame();
 
+        assert(m_Player.OpenStream(2, 48000U));
+        m_Player.Play();
+        assert(m_Player.IsStreamOpen());
     }
 
     void Clipper::OnImGui(float ts) {
@@ -140,6 +143,8 @@ namespace ReplayClipper {
                     // AUDIO
                 } else if (m_CurrentFrame.IsAudio()) {
                     if (m_Elapsed >= m_CurrentFrame.Timestamp()) {
+                        Frame::audio_frame_t& audio = m_CurrentFrame;
+                        m_Player.EnqueueOnce(std::move(audio.Samples));
                         m_CurrentFrame = m_Stream.NextFrame();
                     }
 
