@@ -8,24 +8,19 @@
 #define REPLAYCLIPPER_CLIPPER_H
 
 #include "Application.h"
-#include "VideoFile.h"
+#include "VideoStream.h"
 
 namespace ReplayClipper {
 
     class Clipper : public Application {
 
       private:
-        VideoFile m_Video;
-        float m_VideoTime;
+        VideoStream m_Stream;
+        uint64_t m_Elapsed;
+        Frame m_CurrentFrame;
 
       public:
-        std::mutex m_VideoMutex;
-        std::thread m_VideoProcessingThread;
-        bool m_ShutdownSignal;
-        std::vector<Pixel> m_PixelData;
-        bool m_CopyToFront;
-        int m_Width, m_Height;
-        unsigned int m_FrontTexture, m_BackTexture;
+        unsigned int m_FrontTexture;
 
       public:
         virtual ~Clipper() override = default;

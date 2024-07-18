@@ -8,11 +8,13 @@ add_executable(ReplayClipper)
 target_sources(
         ReplayClipper
         PRIVATE
+        src/Logging.h
         src/Application.cpp
         src/AudioManager.cpp
         src/Clipper.cpp
         src/FileTree.cpp
         src/VideoFile.cpp
+        src/VideoStream.cpp
         src/Main.cpp
 )
 
