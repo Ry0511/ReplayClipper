@@ -8,6 +8,7 @@
 #include "FileTree.h"
 
 #include <string>
+#include <imgui_internal.h>
 
 namespace ReplayClipper {
 
@@ -28,12 +29,11 @@ namespace ReplayClipper {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-        assert(m_Stream.OpenStream("res/1.mp4"));
+        m_Stream.OpenStream("res/1.mp4");
         m_CurrentFrame = m_Stream.NextFrame();
 
-        assert(m_Player.OpenStream(2, 48000U));
+        m_Player.OpenStream(m_Stream.GetChannels(), m_Stream.GetSampleRate());
         m_Player.Play();
-        assert(m_Player.IsStreamOpen());
     }
 
     void Clipper::OnImGui(float ts) {
@@ -74,6 +74,10 @@ namespace ReplayClipper {
                         assert(success);
                         m_Elapsed = 0;
                         m_CurrentFrame = m_Stream.NextFrame();
+
+                        m_Player.CloseStream();
+                        m_Player.OpenStream(m_Stream.GetChannels(), m_Stream.GetSampleRate());
+                        m_Player.Resume();
                     }
             );
         }
@@ -157,6 +161,20 @@ namespace ReplayClipper {
             }
             ImGui::End();
         }
+
+        if (ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoDecoration)) {
+            ImGuiDockNode* node = ImGui::GetWindowDockNode();
+
+            if (node) {
+                node->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+            }
+
+            static float volume = 0.33F;
+            if (ImGui::SliderFloat("Volume", &volume, 0.0F, 1.0F, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                m_Player.SetVolumeScale(volume);
+            }
+        }
+        ImGui::End();
 
         if (ImGui::Begin("Jobs")) {
 

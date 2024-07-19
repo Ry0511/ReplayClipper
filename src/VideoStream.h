@@ -103,6 +103,12 @@ namespace ReplayClipper {
       public:
         Frame NextFrame() noexcept;
 
+      public:
+        bool Seek(double seconds) noexcept;
+
+      public:
+        unsigned int GetChannels() const noexcept;
+        unsigned int GetSampleRate() const noexcept;
     };
 
 } // ReplayClipper

@@ -14,6 +14,8 @@ namespace ReplayClipper {
               m_Handle(RtAudio::UNSPECIFIED),
               m_AudioScalar(0.33F), // To avoid destroying your ears
               m_SamplesQueue() {
+        auto api = m_Handle.getApiDisplayName(m_Handle.getCurrentApi());
+        REPLAY_TRACE("AudioPlayer using API ~ {}", api);
     }
 
     AudioPlayer::~AudioPlayer() {
@@ -29,6 +31,11 @@ namespace ReplayClipper {
             return false;
         }
 
+        if (channels <= 0 || sample_rate <= 0) {
+            REPLAY_TRACE("Invalid Channel Count or Sample Rate; {}, {}", channels, sample_rate);
+            return false;
+        }
+
         // Params
         RtAudio::StreamParameters params{};
         params.deviceId = m_Handle.getDefaultOutputDevice();
@@ -37,9 +44,16 @@ namespace ReplayClipper {
 
         // Potentially no Device
         if (params.deviceId == 0) {
+            REPLAY_WARN("Failed to open AudioStream device is unknown; {}", m_Handle.getErrorText());
             return false;
         }
 
+        REPLAY_TRACE(
+                "Opening Stream; {}, {}, {}",
+                params.deviceId,
+                params.nChannels,
+                params.firstChannel
+        );
         unsigned int buffer = 512;
         RtAudioErrorType err = m_Handle.openStream(
                 &params,
@@ -80,6 +94,18 @@ namespace ReplayClipper {
         m_SamplesQueue.emplace_back(std::move(samples));
     }
 
+    void AudioPlayer::Play() noexcept {
+        m_Handle.startStream();
+    }
+
+    void AudioPlayer::Pause() noexcept {
+        m_Handle.stopStream();
+    }
+
+    void AudioPlayer::Resume() noexcept {
+        m_Handle.startStream();
+    }
+
     int AudioPlayer::AudioCallback(
             void* out_raw,
             void*,
@@ -89,12 +115,17 @@ namespace ReplayClipper {
             void* self_raw
     ) {
 
-        if (status != 0) {
-            return -1;
-        }
-
         AudioPlayer* self = static_cast<AudioPlayer*>(self_raw);
         float* out = static_cast<float*>(out_raw);
+
+        if (status != 0) {
+            REPLAY_TRACE(
+                    "Audio Stream Exiting; Non-Zero Status {}; {}",
+                    status,
+                    self->m_Handle.getErrorText()
+            );
+            return -1;
+        }
 
         const size_t bytes_to_write = frames * self->m_Channels * sizeof(float);
 
@@ -118,19 +149,12 @@ namespace ReplayClipper {
             } while ((written + offset) < bytes_to_write && !self->m_SamplesQueue.empty());
         }
 
+        for (int i = 0; i < frames * self->m_Channels; ++i) {
+            out[i] *= self->m_AudioScalar;
+        }
+
         return 0;
     }
 
-    void AudioPlayer::Play() noexcept {
-        m_Handle.startStream();
-    }
-
-    void AudioPlayer::Pause() noexcept {
-        m_Handle.stopStream();
-    }
-
-    void AudioPlayer::Resume() noexcept {
-        m_Handle.startStream();
-    }
 
 } // ReplayClipper

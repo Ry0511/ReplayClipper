@@ -75,6 +75,18 @@ namespace ReplayClipper {
             glfwGetFramebufferSize(m_Window, &fb_width, &fb_height);
             glViewport(0, 0, fb_width, fb_height);
 
+            { // Primitive Frame Locking
+                constexpr float TARGET_FRAME_RATE = 1.0F / 120.0F;
+                Instant pre = Clock::now();
+                float temp = ts;
+                while (temp < TARGET_FRAME_RATE) {
+                    std::this_thread::yield();
+                    Instant after = Clock::now();
+                    temp += FloatDuration{after - pre}.count();
+                    pre = after;
+                }
+            }
+
             // Metrics
             m_Metrics.FrameCount++;
             m_Metrics.Framerate = 1.0F / ts;

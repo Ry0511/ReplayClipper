@@ -210,11 +210,37 @@ namespace ReplayClipper {
 
             return false;
         }
+
+      public:
+        bool Seek(double ts) noexcept {
+            if (!IsOpen()) {
+                return false;
+            }
+            int res = av_seek_frame(GetFormatContext(), -1, ts * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD);
+            return res >= 0;
+        }
+
+      public:
+        unsigned int GetChannels() const noexcept {
+            if (!m_AudioCodec) {
+                return 0;
+            }
+            return m_AudioCodec->ch_layout.nb_channels;
+        }
+        unsigned int GetSampleRate() const noexcept {
+            if (!m_AudioCodec) {
+                return 0;
+            }
+            return m_AudioCodec->sample_rate;
+        }
     };
 
-    static bool ConvertToRGB(AVFrame* src_frame, Frame::video_frame_t& out) {
-
-        constexpr AVPixelFormat dest_fmt = AV_PIX_FMT_RGB24;
+    static bool ConvertToRGB(
+            AVFrame* src_frame,
+            Frame::video_frame_t& out,
+            int desired_width = -1,
+            int desired_height = -1
+    ) {
 
         // Source Params
         int src_w = src_frame->width;
@@ -222,11 +248,17 @@ namespace ReplayClipper {
         REPLAY_ASSERT(src_w > 0 && src_h > 0);
         const AVPixelFormat src_fmt = static_cast<const AVPixelFormat>(src_frame->format);
 
+        int width = (desired_width > 0) ? desired_width : src_w;
+        int height = (desired_height > 0) ? desired_height : src_h;
+
         // Rescaling Context
         SwsContext* sws_ctx = sws_getContext(
+                // Input Options
                 src_w, src_h, src_fmt,
-                src_w, src_h, dest_fmt,
-                SWS_BILINEAR,
+                // Output Options
+                width, height, AV_PIX_FMT_RGB24,
+                // Scaling
+                SWS_LANCZOS,
                 nullptr,
                 nullptr,
                 nullptr
@@ -265,11 +297,12 @@ namespace ReplayClipper {
 
     }
 
-    static bool ConvertToPackedAudio(AVFrame* frame, Frame::audio_frame_t& audio) {
+    static bool ConvertToPackedAudio(
+            AVFrame* frame,
+            Frame::audio_frame_t& audio
+    ) {
 
         REPLAY_ASSERT(frame->nb_samples > 0 && frame->ch_layout.nb_channels > 0);
-        size_t total_samples = size_t(frame->nb_samples) * size_t(frame->ch_layout.nb_channels);
-        audio.Samples.resize(total_samples * sizeof(float));
 
         SwrContext* ctx = nullptr;
         int res = swr_alloc_set_opts2(
@@ -298,6 +331,9 @@ namespace ReplayClipper {
             swr_free(&ctx);
             return false;
         }
+
+        // Resize Vector
+        audio.Samples.resize(size_t(frame->nb_samples) * size_t(frame->ch_layout.nb_channels) * sizeof(float));
 
         uint8_t* out[1]{audio.Samples.data()};
 
@@ -397,6 +433,18 @@ namespace ReplayClipper {
             return Frame{};
         }
 
+      public:
+        inline bool Seek(double ts) noexcept {
+            return m_Stream.Seek(ts);
+        }
+
+      public:
+        unsigned int GetChannels() const noexcept {
+            return m_Stream.GetChannels();
+        }
+        unsigned int GetSampleRate() const noexcept {
+            return m_Stream.GetSampleRate();
+        }
     };
 
     //############################################################################//
@@ -430,6 +478,18 @@ namespace ReplayClipper {
 
     Frame VideoStream::NextFrame() noexcept {
         return m_Impl->NextFrame();
+    }
+
+    bool VideoStream::Seek(double seconds) noexcept {
+        return m_Impl->Seek(seconds);
+    }
+
+    unsigned int VideoStream::GetSampleRate() const noexcept {
+        return m_Impl->GetSampleRate();
+    }
+
+    unsigned int VideoStream::GetChannels() const noexcept {
+        return m_Impl->GetChannels();
     }
 
 } // ReplayClipper
