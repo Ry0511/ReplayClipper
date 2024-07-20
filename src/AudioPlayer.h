@@ -74,7 +74,10 @@ namespace ReplayClipper {
         ~AudioPlayer();
 
       public:
-        void SetVolumeScale(float scale) {
+        inline float GetVolumeScale() const noexcept {
+            return m_AudioScalar;
+        }
+        inline void SetVolumeScale(float scale) {
             m_AudioScalar = scale;
         }
 
@@ -94,6 +97,12 @@ namespace ReplayClipper {
 
       public:
         void EnqueueOnce(std::vector<uint8_t>&& samples);
+
+      public:
+        void ClearQueue() {
+            m_AudioQueues[0].clear();
+            m_AudioQueues[1].clear();
+        }
 
       private:
         static int AudioCallback(void*, void*, unsigned int, double, RtAudioStreamStatus, void*);

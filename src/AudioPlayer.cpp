@@ -164,5 +164,4 @@ namespace ReplayClipper {
         return 0;
     }
 
-
 } // ReplayClipper

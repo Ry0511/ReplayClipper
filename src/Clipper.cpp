@@ -6,6 +6,7 @@
 
 #include "Clipper.h"
 #include "FileTree.h"
+#include "Logging.h"
 
 #include <string>
 #include <imgui_internal.h>
@@ -14,6 +15,9 @@
 #include <ShlObj.h>
 
 namespace ReplayClipper {
+
+    // TODO: Find a good way to deal with time units. Likely using nanoseconds internally for
+    //  everything. Input functions will just assume you provided nanoseconds and rescale internally.
 
     static FileTree gTree;
 
@@ -150,20 +154,16 @@ namespace ReplayClipper {
             }
 
             ImGui::SeparatorText("Video");
-            ImGui::Indent(8.0F);
-            ImGui::TextWrapped("Width     %d", width);
-            ImGui::TextWrapped("Height    %d", height);
-            ImGui::TextWrapped("Timestamp %llu", video_timestamp);
-            ImGui::TextWrapped("Size      %.3fmb", video_frame_size);
-            ImGui::Unindent(8.0F);
+            ImGui::Text("Width     %d", width);
+            ImGui::Text("Height    %d", height);
+            ImGui::Text("Timestamp %llu", video_timestamp);
+            ImGui::Text("Size      %.3fmb", video_frame_size);
 
             ImGui::SeparatorText("Audio");
-            ImGui::Indent(8.0F);
-            ImGui::TextWrapped("Channels    %d", channel);
-            ImGui::TextWrapped("Sample Rate %d", sample_rate);
-            ImGui::TextWrapped("Timestamp   %llu", audio_timestamp);
-            ImGui::TextWrapped("Size      %.3fmb", audio_frame_size);
-            ImGui::Unindent(8.0F);
+            ImGui::Text("Channels    %d", channel);
+            ImGui::Text("Sample Rate %d", sample_rate);
+            ImGui::Text("Timestamp   %llu", audio_timestamp);
+            ImGui::Text("Size      %.3fmb", audio_frame_size);
         }
         ImGui::End();
 
@@ -228,12 +228,12 @@ namespace ReplayClipper {
                 if (ImGui::Begin("Metrics")) {
                     ImGui::TextWrapped("Stream Open ~ %s", m_Stream.IsOpen() ? "Yes" : "No");
                     ImGui::SeparatorText("Timings");
-                    ImGui::TextWrapped("Video Frame Upload Time  %.3fms", video_frame_upload_time);
-                    ImGui::TextWrapped("Video Frame Seek Time    %.3fms", video_frame_seek_time);
-                    ImGui::TextWrapped("Total Video Frame Time   %.3fms", video_frame_seek_time + video_frame_upload_time);
-                    ImGui::TextWrapped("Audio Frame Enqueue Time %.3fms", audio_frame_enqueue_time);
-                    ImGui::TextWrapped("Audio Frame Seek Time    %.3fms", audio_frame_seek_time);
-                    ImGui::TextWrapped("Total Audio Frame Time   %.3fms", audio_frame_seek_time + audio_frame_enqueue_time);
+                    ImGui::Text("Video Frame Upload Time  %.3fms", video_frame_upload_time);
+                    ImGui::Text("Video Frame Seek Time    %.3fms", video_frame_seek_time);
+                    ImGui::Text("Total Video Frame Time   %.3fms", video_frame_seek_time + video_frame_upload_time);
+                    ImGui::Text("Audio Frame Enqueue Time %.3fms", audio_frame_enqueue_time);
+                    ImGui::Text("Audio Frame Seek Time    %.3fms", audio_frame_seek_time);
+                    ImGui::Text("Total Audio Frame Time   %.3fms", audio_frame_seek_time + audio_frame_enqueue_time);
                 }
                 ImGui::End();
 
@@ -268,16 +268,56 @@ namespace ReplayClipper {
             ImGui::End();
         }
 
-        if (ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoDecoration)) {
+        if (ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGuiDockNode* node = ImGui::GetWindowDockNode();
 
             if (node) {
                 node->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+                node->LocalFlags |= ImGuiDockNodeFlags_NoResize;
             }
 
-            static float volume = 0.33F;
-            if (ImGui::SliderFloat("Volume", &volume, 0.0F, 1.0F, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            avail.x -= ImGui::GetStyle().CellPadding.x * 2.0F;
+
+            ImVec2 cursor_start = ImGui::GetCursorPos();
+            int64_t duration = m_Stream.GetDuration();
+            float progress = 0.0F;
+            progress = (m_Elapsed >= duration)
+                       ? 1.0F
+                       : double(m_Elapsed) / double(duration);
+            ImGui::ProgressBar(progress, ImVec2{avail.x * 0.75F, 0}, "");
+            if (ImGui::IsItemClicked()) {
+                ImVec2 min = ImGui::GetItemRectMin();
+                ImVec2 max = ImGui::GetItemRectMax();
+                ImVec2 pos = ImGui::GetMousePos();
+
+                double normalized_click_pos = (pos.x - min.x) / (max.x - min.x);
+                normalized_click_pos = std::clamp(normalized_click_pos, 0.0, 1.0);
+
+                double new_playback_position = duration * normalized_click_pos;
+                REPLAY_TRACE("Seek Pos {}, {}", normalized_click_pos, new_playback_position / 1e6F);
+                m_Stream.Seek(new_playback_position / 1e6F);
+
+                m_CurrentFrame = m_Stream.NextFrame();
+                while (!m_CurrentFrame.IsValid()) {
+                    m_CurrentFrame = m_Stream.NextFrame();
+                }
+                m_Elapsed = m_CurrentFrame.Timestamp();
+                m_Player.ClearQueue();
+            }
+
+            ImGui::SameLine();
+            static float volume = m_Player.GetVolumeScale();
+            ImGui::SetNextItemWidth(avail.x * 0.25F);
+            if (ImGui::SliderFloat("##", &volume, 0.0F, 1.0F, "Volume %.2f", ImGuiSliderFlags_AlwaysClamp)) {
                 m_Player.SetVolumeScale(volume);
+            }
+
+            ImVec2 cursor_end = ImGui::GetCursorPos();
+            ImVec2 required_size = ImVec2(cursor_end.x - cursor_start.x + 16.0F, cursor_end.y - cursor_start.y + 16.0F);
+            if (node && node->ParentNode) {
+                node->Size = required_size;
+                node->SizeRef = required_size;
             }
         }
         ImGui::End();

@@ -213,6 +213,10 @@ namespace ReplayClipper {
                 return false;
             }
             int res = av_seek_frame(GetFormatContext(), -1, ts * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD);
+
+            avcodec_flush_buffers(m_VideoCodec);
+            avcodec_flush_buffers(m_AudioCodec);
+
             return res >= 0;
         }
 
@@ -228,6 +232,14 @@ namespace ReplayClipper {
                 return 0;
             }
             return m_AudioCodec->sample_rate;
+        }
+
+      public:
+        int64_t GetDuration() const noexcept {
+            if (!m_FormatContext) {
+                return 0LL;
+            }
+            return m_FormatContext->duration;
         }
     };
 
@@ -442,6 +454,11 @@ namespace ReplayClipper {
         unsigned int GetSampleRate() const noexcept {
             return m_Stream.GetSampleRate();
         }
+
+      public:
+        int64_t GetDuration() const noexcept {
+            return m_Stream.GetDuration();
+        }
     };
 
     //############################################################################//
@@ -487,6 +504,10 @@ namespace ReplayClipper {
 
     unsigned int VideoStream::GetChannels() const noexcept {
         return m_Impl->GetChannels();
+    }
+
+    int64_t VideoStream::GetDuration() const noexcept {
+        return m_Impl->GetDuration();
     }
 
 } // ReplayClipper

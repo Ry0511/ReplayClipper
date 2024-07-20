@@ -109,6 +109,9 @@ namespace ReplayClipper {
       public:
         unsigned int GetChannels() const noexcept;
         unsigned int GetSampleRate() const noexcept;
+
+      public:
+        int64_t GetDuration() const noexcept;
     };
 
 } // ReplayClipper
