@@ -20,6 +20,7 @@ namespace ReplayClipper {
         VideoStream m_Stream;
         uint64_t m_Elapsed;
         Frame m_CurrentFrame;
+        int m_Width, m_Height;
 
       public:
         unsigned int m_FrontTexture;

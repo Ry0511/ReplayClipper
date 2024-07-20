@@ -194,6 +194,8 @@ namespace ReplayClipper {
                             video.Pixels.data()
                     );
                     glBindTexture(GL_TEXTURE_2D, 0);
+                    m_Width = video.Width;
+                    m_Height = video.Height;
                     watch.End();
                     video_frame_upload_time = watch.Millis<double>();
 
@@ -236,7 +238,32 @@ namespace ReplayClipper {
                 ImGui::End();
 
                 // Display Current Video Frame
-                ImGui::Image((void*) (intptr_t) m_FrontTexture, ImGui::GetContentRegionAvail());
+                double aspect = double(m_Width) / double(m_Height);
+                ImVec2 space = ImGui::GetContentRegionAvail();
+                ImVec2 display{0, 0};
+
+                if (float(space.x) / float(space.y) > aspect) {
+                    display.y = space.y;
+                    display.x = display.y * aspect;
+                } else {
+                    display.x = space.x;
+                    display.y = display.x / aspect;
+                }
+
+                ImVec2 original_pos = ImGui::GetCursorScreenPos();
+                ImVec2 window_pos = ImGui::GetWindowPos();
+                ImVec2 window_size = ImGui::GetWindowSize();
+
+                ImGui::SetCursorPos(
+                        ImVec2{
+                                (window_size.x - display.x) * 0.5F,
+                                ((window_size.y - display.y) * 0.5F) + ImGui::GetStyle().WindowPadding.y,
+                        }
+                );
+
+                ImGui::Image((void*) (intptr_t) m_FrontTexture, display);
+
+                ImGui::SetCursorScreenPos(original_pos);
             }
             ImGui::End();
         }
