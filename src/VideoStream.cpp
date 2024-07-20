@@ -26,8 +26,6 @@ extern "C" {
 
 namespace ReplayClipper {
 
-    // TODO: Test implementation and then parallel boosting
-
     //############################################################################//
     // | Lazy Video Stream |
     //############################################################################//
@@ -164,7 +162,6 @@ namespace ReplayClipper {
                 return false;
             }
 
-            REPLAY_TRACE("Reading Frame ~ {:p}", (void*) out);
             while (av_read_frame(m_FormatContext, m_Packet) >= 0) {
 
                 AVCodecContext* codec_context = nullptr;
@@ -182,7 +179,6 @@ namespace ReplayClipper {
                     av_packet_unref(m_Packet);
                     continue;
                 }
-                REPLAY_TRACE("Reading Frame ~ '{}'", codec_context->codec->long_name);
 
                 int res = avcodec_send_packet(codec_context, m_Packet);
 
@@ -252,13 +248,14 @@ namespace ReplayClipper {
         int height = (desired_height > 0) ? desired_height : src_h;
 
         // Rescaling Context
-        SwsContext* sws_ctx = sws_getContext(
+        SwsContext* sws_ctx = sws_getCachedContext(
+                nullptr,
                 // Input Options
                 src_w, src_h, src_fmt,
                 // Output Options
                 width, height, AV_PIX_FMT_RGB24,
                 // Scaling
-                SWS_LANCZOS,
+                SWS_BILINEAR,
                 nullptr,
                 nullptr,
                 nullptr
@@ -271,15 +268,15 @@ namespace ReplayClipper {
         }
 
         // Setup Output Buffer
-        size_t dest_size = size_t(src_w) * size_t(src_h) * 3ULL;
+        size_t dest_size = size_t(width) * size_t(height) * 3ULL;
         Frame::video_frame_t& video = out;
-        video.Width = src_w;
-        video.Height = src_h;
+        video.Width = width;
+        video.Height = height;
         video.Timestamp = av_rescale_q(src_frame->pts, src_frame->time_base, AV_TIME_BASE_Q);
         video.Pixels.resize(dest_size, 255);
 
         // Expected Input; We only care for the first of each
-        const int ls[4]{3 * src_w};
+        const int ls[4]{3 * width};
         uint8_t* data[4]{video.Pixels.data()};
 
         sws_scale(
@@ -287,7 +284,7 @@ namespace ReplayClipper {
                 src_frame->data,
                 src_frame->linesize,
                 0,
-                src_h,
+                src_frame->height,
                 data,
                 ls
         );

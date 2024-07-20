@@ -34,6 +34,9 @@ namespace ReplayClipper {
         virtual bool OnUpdate(float ts) override;
         virtual void OnShutdown() override;
 
+      private:
+        void SetupDefaultDockspace();
+
       protected:
         static void ProcessVideo(Clipper* app);
     };

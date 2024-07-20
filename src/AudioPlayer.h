@@ -61,8 +61,8 @@ namespace ReplayClipper {
 
       private:
         RtAudio m_Handle;
-        std::mutex m_Mutex;
-        std::deque<ByteStream> m_SamplesQueue;
+        std::atomic_int m_Index;
+        std::deque<ByteStream> m_AudioQueues[2];
         int m_Channels;
         float m_AudioScalar;
 

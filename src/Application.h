@@ -7,7 +7,7 @@
 #ifndef REPLAYCLIPPER_APPLICATION_H
 #define REPLAYCLIPPER_APPLICATION_H
 
-#include "AudioPlayer.h"
+#include "Stopwatch.h"
 
 #include "glad/glad.h"
 

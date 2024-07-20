@@ -10,10 +10,11 @@
 namespace ReplayClipper {
 
     AudioPlayer::AudioPlayer()
-            : m_Mutex(),
-              m_Handle(RtAudio::UNSPECIFIED),
-              m_AudioScalar(0.33F), // To avoid destroying your ears
-              m_SamplesQueue() {
+            : m_Handle(RtAudio::UNSPECIFIED),
+              m_Index(0),
+              m_AudioQueues(),
+              m_Channels(-1),
+              m_AudioScalar(0.15F) {
         auto api = m_Handle.getApiDisplayName(m_Handle.getCurrentApi());
         REPLAY_TRACE("AudioPlayer using API ~ {}", api);
     }
@@ -49,10 +50,11 @@ namespace ReplayClipper {
         }
 
         REPLAY_TRACE(
-                "Opening Stream; {}, {}, {}",
+                "Opening Stream; {}, {}, {}, {}",
                 params.deviceId,
                 params.nChannels,
-                params.firstChannel
+                params.firstChannel,
+                sample_rate
         );
         unsigned int buffer = 512;
         RtAudioErrorType err = m_Handle.openStream(
@@ -85,13 +87,14 @@ namespace ReplayClipper {
         }
         m_Handle.closeStream();
         m_Channels = 0;
-        m_SamplesQueue.clear();
+        m_AudioQueues[0].clear();
+        m_AudioQueues[1].clear();
         return true;
     }
 
     void AudioPlayer::EnqueueOnce(std::vector<uint8_t>&& samples) {
-        std::unique_lock guard{m_Mutex};
-        m_SamplesQueue.emplace_back(std::move(samples));
+        int queue_index = (m_Index.load() + 1) % 2;
+        m_AudioQueues[queue_index].emplace_back(std::move(samples));
     }
 
     void AudioPlayer::Play() noexcept {
@@ -129,28 +132,33 @@ namespace ReplayClipper {
 
         const size_t bytes_to_write = frames * self->m_Channels * sizeof(float);
 
+        int current_queue_index = self->m_Index.load();
+        std::deque<ByteStream>& queue = self->m_AudioQueues[current_queue_index];
+
         {
-            std::unique_lock guard{self->m_Mutex};
-
-            if (self->m_SamplesQueue.empty()) {
+            if (queue.empty()) {
                 std::memset(out_raw, 0, bytes_to_write);
-                return 0;
-            }
+            } else {
+                size_t written = 0;
+                size_t offset = 0;
 
-            size_t written = 0;
-            size_t offset = 0;
-            do {
-                ByteStream& stream = self->m_SamplesQueue.front();
-                written = stream.Fetch(reinterpret_cast<uint8_t*>(out) + offset, bytes_to_write - offset);
-                offset += written;
-                if (stream.Remaining() == 0) {
-                    self->m_SamplesQueue.pop_front();
+                do {
+                    ByteStream& stream = queue.front();
+                    written = stream.Fetch(reinterpret_cast<uint8_t*>(out) + offset, bytes_to_write - offset);
+                    offset += written;
+                    if (stream.Remaining() == 0) {
+                        queue.pop_front();
+                    }
+                } while ((written + offset) < bytes_to_write && !queue.empty());
+
+                for (int i = 0; i < frames * self->m_Channels; ++i) {
+                    out[i] *= self->m_AudioScalar;
                 }
-            } while ((written + offset) < bytes_to_write && !self->m_SamplesQueue.empty());
+            }
         }
 
-        for (int i = 0; i < frames * self->m_Channels; ++i) {
-            out[i] *= self->m_AudioScalar;
+        if (queue.empty()) {
+            self->m_Index.store((current_queue_index + 1) % 2);
         }
 
         return 0;
