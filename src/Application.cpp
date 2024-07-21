@@ -60,13 +60,12 @@ namespace ReplayClipper {
 
         this->OnStart();
 
-        Instant before = Clock::now();
-        Instant now = Clock::now();
+        Stopwatch watch{};
 
         while (!glfwWindowShouldClose(m_Window)) {
-            now = Clock::now();
-            float ts = FloatDuration{now - before}.count();
-            before = now;
+
+            watch.Start();
+
             glfwPollEvents();
 
             // Pre GL Stuff
@@ -76,20 +75,16 @@ namespace ReplayClipper {
             glViewport(0, 0, fb_width, fb_height);
 
             { // Primitive Frame Locking
-                constexpr float TARGET_FRAME_RATE = 1.0F / 120.0F;
-                Instant pre = Clock::now();
-                float temp = ts;
-                while (temp < TARGET_FRAME_RATE) {
+                constexpr size_t TARGET_FRAMERATE = NANOSECONDS_SCALE / 120LLU;
+                Stopwatch temp{};
+                size_t error = m_Metrics.Delta;
+                while (error < TARGET_FRAMERATE) {
+                    temp.Start();
                     std::this_thread::yield();
-                    Instant after = Clock::now();
-                    temp += FloatDuration{after - pre}.count();
-                    pre = after;
+                    temp.End();
+                    error -= temp.Nano<size_t>();
                 }
             }
-
-            // Metrics
-            m_Metrics.FrameCount++;
-            m_Metrics.Framerate = 1.0F / ts;
 
             // ImGui
             ImGui_ImplOpenGL3_NewFrame();
@@ -98,15 +93,22 @@ namespace ReplayClipper {
             ImGui::DockSpaceOverViewport();
             ImGui::ShowDemoWindow();
 
-            this->OnImGui(ts);
+            this->OnImGui(m_Metrics.DeltaSeconds);
             ImGui::Render();
 
             // Update
-            bool should_continue = this->OnUpdate(ts);
+            bool should_continue = this->OnUpdate(m_Metrics.DeltaSeconds);
 
             // Rendering
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(m_Window);
+
+            watch.End();
+            m_Metrics.Delta = watch.Nano<size_t>();
+            m_Metrics.DeltaSeconds = watch.Seconds<float>();
+            m_Metrics.Elapsed += m_Metrics.Delta;
+            m_Metrics.FrameCount++;
+            m_Metrics.Framerate = 1.0F / m_Metrics.DeltaSeconds;
 
             if (!should_continue) break;
         }
@@ -124,8 +126,25 @@ namespace ReplayClipper {
 
     void Application::OnImGui(float ts) {
         if (ImGui::Begin("Metrics")) {
-            ImGui::Text("Frame %llu", m_Metrics.FrameCount);
-            ImGui::Text("Framerate %.2f", m_Metrics.Framerate);
+            ImGui::SeparatorText("Application Timings");
+
+            if (ImGui::BeginTable("Timings", 2, ImGuiTableFlags_SizingFixedSame)) {
+                auto append_table = [](const char* header, const char* fmt, auto&& value) {
+                    ImGui::TableNextRow(ImGuiTableRowFlags_None);
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", header);
+                    ImGui::TableNextColumn();
+                    ImGui::Text(fmt, value);
+                };
+
+                append_table("Framerate", "%.2f", m_Metrics.Framerate);
+                append_table("Frame Count", "%llu", m_Metrics.FrameCount);
+                append_table("Elapsed", "%llu", m_Metrics.Elapsed);
+                append_table("Delta", "%llu", m_Metrics.Delta);
+                append_table("Delta Seconds", "%.2f", m_Metrics.DeltaSeconds);
+
+                ImGui::EndTable();
+            }
         }
         ImGui::End();
     }

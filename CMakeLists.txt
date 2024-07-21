@@ -10,6 +10,7 @@ target_sources(
         PRIVATE
         src/Logging.h
         src/Stopwatch.h
+        src/DirectoryNavigator.cpp
         src/Application.cpp
         src/AudioPlayer.cpp
         src/Clipper.cpp

@@ -18,9 +18,14 @@
 
 namespace ReplayClipper {
 
+    constexpr size_t NANOSECONDS_SCALE = 1e9;
+
     struct Metrics {
         float Framerate;
         size_t FrameCount;
+        size_t Elapsed;
+        size_t Delta;
+        float DeltaSeconds;
     };
 
     class Application {

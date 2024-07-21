@@ -29,13 +29,10 @@ namespace ReplayClipper {
       public:
         inline void Start() noexcept {
             m_Start = Clock::now();
+            m_End = m_Start;
         }
         inline void End() noexcept {
             m_End = Clock::now();
-        }
-        inline void Reset() noexcept {
-            m_Start = Clock::now();
-            m_End = m_Start;
         }
 
       public:
