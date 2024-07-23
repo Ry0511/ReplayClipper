@@ -7,6 +7,7 @@
 #include "VideoStream.h"
 
 #include "Logging.h"
+#include "Stopwatch.h"
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -143,9 +144,11 @@ namespace ReplayClipper {
         AVFormatContext* GetFormatContext() const noexcept {
             return m_FormatContext;
         }
+
         AVCodecContext* GetVideoContext() const noexcept {
             return m_VideoCodec;
         }
+
         AVCodecContext* GetAudioContext() const noexcept {
             return m_AudioCodec;
         }
@@ -156,7 +159,12 @@ namespace ReplayClipper {
         }
 
       public:
-        bool NextFrame(AVFrame* out) {
+        static constexpr int STREAM_FLAG_AUDIO = 1 << 0;
+        static constexpr int STREAM_FLAG_VIDEO = 1 << 1;
+        static constexpr int STREAM_FLAG_BOTH = STREAM_FLAG_AUDIO | STREAM_FLAG_VIDEO;
+
+      public:
+        bool NextFrame(AVFrame* out, int stream_flags = STREAM_FLAG_BOTH) {
 
             if (!IsOpen()) {
                 return false;
@@ -167,10 +175,10 @@ namespace ReplayClipper {
                 AVCodecContext* codec_context = nullptr;
 
                 // Figure out what stream the packet is
-                if (m_Packet->stream_index == m_VideoIndex) {
+                if (m_Packet->stream_index == m_VideoIndex && (stream_flags & STREAM_FLAG_VIDEO)) {
                     codec_context = m_VideoCodec;
 
-                } else if (m_Packet->stream_index == m_AudioIndex) {
+                } else if (m_Packet->stream_index == m_AudioIndex && (stream_flags & STREAM_FLAG_AUDIO)) {
                     codec_context = m_AudioCodec;
                 }
 
@@ -212,12 +220,42 @@ namespace ReplayClipper {
             if (!IsOpen()) {
                 return false;
             }
+
             int res = av_seek_frame(GetFormatContext(), -1, ts * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD);
+            if (res < 0) {
+                return false;
+            }
 
             avcodec_flush_buffers(m_VideoCodec);
             avcodec_flush_buffers(m_AudioCodec);
 
-            return res >= 0;
+            // Walk forward until we get to the desired timestamp
+            Stopwatch watch{};
+            watch.Start();
+            int64_t time = int64_t(ts * AV_TIME_BASE);
+            int64_t frame_time_rescaled = 0;
+            size_t frames_skipped = 0;
+            AVFrame* temp = av_frame_alloc();
+            bool got_frame = false;
+            do {
+                got_frame = NextFrame(temp, STREAM_FLAG_VIDEO);
+                constexpr int64_t OFFSET = AV_TIME_BASE / 2;
+                frame_time_rescaled = av_rescale_q(temp->pts, temp->time_base, AV_TIME_BASE_Q) + OFFSET;
+                ++frames_skipped;
+            } while (got_frame && time > frame_time_rescaled);
+            watch.End();
+
+            REPLAY_TRACE(
+                    "Forward seek skipped {} frames from {} to {}; Total Seek Time {:.2f}ms",
+                    frames_skipped,
+                    time,
+                    frame_time_rescaled,
+                    watch.Millis<float>()
+            );
+            av_frame_free(&temp);
+
+
+            return true;
         }
 
       public:
@@ -227,6 +265,7 @@ namespace ReplayClipper {
             }
             return m_AudioCodec->ch_layout.nb_channels;
         }
+
         unsigned int GetSampleRate() const noexcept {
             if (!m_AudioCodec) {
                 return 0;
@@ -390,6 +429,7 @@ namespace ReplayClipper {
         bool HasSpace() const noexcept {
             return m_Pool.size() <= m_PoolSize;
         }
+
         bool HasFrames() const noexcept {
             return !m_Pool.empty();
         }
@@ -456,6 +496,7 @@ namespace ReplayClipper {
         unsigned int GetChannels() const noexcept {
             return m_Stream.GetChannels();
         }
+
         unsigned int GetSampleRate() const noexcept {
             return m_Stream.GetSampleRate();
         }

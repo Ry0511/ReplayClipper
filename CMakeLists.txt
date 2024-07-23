@@ -14,7 +14,6 @@ target_sources(
         src/Application.cpp
         src/AudioPlayer.cpp
         src/Clipper.cpp
-        src/FileTree.cpp
         src/VideoStream.cpp
         src/Main.cpp
 )

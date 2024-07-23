@@ -5,7 +5,6 @@
 //
 
 #include "Clipper.h"
-#include "FileTree.h"
 #include "Logging.h"
 
 #include <string>
@@ -174,10 +173,12 @@ namespace ReplayClipper {
                        ? 1.0F
                        : double(m_Elapsed) / double(duration);
             ImGui::ProgressBar(progress, ImVec2{avail.x * 0.75F, 0}, "");
+
+            ImVec2 min = ImGui::GetItemRectMin();
+            ImVec2 max = ImGui::GetItemRectMax();
+            ImVec2 pos = ImGui::GetMousePos();
+
             if (ImGui::IsItemClicked()) {
-                ImVec2 min = ImGui::GetItemRectMin();
-                ImVec2 max = ImGui::GetItemRectMax();
-                ImVec2 pos = ImGui::GetMousePos();
 
                 double normalized_click_pos = (pos.x - min.x) / (max.x - min.x);
                 normalized_click_pos = std::clamp(normalized_click_pos, 0.0, 1.0);
