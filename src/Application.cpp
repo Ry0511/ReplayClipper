@@ -126,9 +126,7 @@ namespace ReplayClipper {
 
     void Application::OnImGui(float ts) {
         if (ImGui::Begin("Metrics")) {
-            ImGui::SeparatorText("Application Timings");
-
-            if (ImGui::BeginTable("Timings", 2, ImGuiTableFlags_SizingFixedSame)) {
+            if (ImGui::BeginTable("Timings", 2, ImGuiTableFlags_Resizable)) {
                 auto append_table = [](const char* header, const char* fmt, auto&& value) {
                     ImGui::TableNextRow(ImGuiTableRowFlags_None);
                     ImGui::TableNextColumn();
@@ -136,6 +134,10 @@ namespace ReplayClipper {
                     ImGui::TableNextColumn();
                     ImGui::Text(fmt, value);
                 };
+
+                ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+                ImGui::TableNextColumn();
+                ImGui::TextColored(ImVec4{0.15F, 0.65F, 0.89F, 1.0F}, "Application Timings");
 
                 append_table("Framerate", "%.2f", m_Metrics.Framerate);
                 append_table("Frame Count", "%llu", m_Metrics.FrameCount);

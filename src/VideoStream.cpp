@@ -443,6 +443,11 @@ namespace ReplayClipper {
         }
 
       public:
+        bool IsOpen() const noexcept {
+            return m_Stream.IsOpen();
+        }
+
+      public:
         inline bool Seek(double ts) noexcept {
             return m_Stream.Seek(ts);
         }
@@ -483,7 +488,7 @@ namespace ReplayClipper {
     }
 
     bool VideoStream::IsOpen() const noexcept {
-        return false;
+        return m_Impl->IsOpen();
     }
 
     bool VideoStream::OpenStream(const fs::path& file) {
