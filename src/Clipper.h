@@ -51,6 +51,7 @@ namespace ReplayClipper {
       private:
         void ShowAppMetrics();
         void ShowFileTreeNavigator();
+        void ShowVideoPlayer();
 
       protected:
         static void ProcessVideo(Clipper* app);

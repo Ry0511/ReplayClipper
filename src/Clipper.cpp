@@ -21,6 +21,8 @@ namespace ReplayClipper {
     // TODO: Replace UI Code with function calls for clarity.
     // TODO: Clipping Jobs
     // TODO: Move the Windows API usage out
+    // TODO: Wherever you see 1e6 that needs to be replaced with a proper time conversion as it is
+    //  relevant to the stream.
 
     // @off
     static int      width            = 0;
@@ -69,147 +71,7 @@ namespace ReplayClipper {
 
         ShowFileTreeNavigator();
         ShowAppMetrics();
-
-        ImGui::End();
-        {
-
-            m_Elapsed += static_cast<uint64_t>(ts * 1e6);
-            if (ImGui::Begin("Video Player")) {
-                Stopwatch watch{};
-
-                bool frame_consumed = false;
-
-                // VIDEO
-                if (m_CurrentFrame.IsVideo() && m_Elapsed >= m_CurrentFrame.Timestamp()) {
-                    watch.Start();
-                    const Frame::video_frame_t& video = m_CurrentFrame;
-                    glBindTexture(GL_TEXTURE_2D, m_FrontTexture);
-                    glTexImage2D(
-                            GL_TEXTURE_2D, 0, GL_RGBA,
-                            video.Width, video.Height,
-                            0,
-                            GL_RGB,
-                            GL_UNSIGNED_BYTE,
-                            video.Pixels.data()
-                    );
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                    m_Width = video.Width;
-                    m_Height = video.Height;
-                    watch.End();
-                    video_frame_upload_time = watch.Millis<double>();
-
-                    frame_consumed = true;
-
-                    // AUDIO
-                } else if (m_CurrentFrame.IsAudio()) {
-                    watch.Start();
-                    Frame::audio_frame_t& audio = m_CurrentFrame;
-                    m_Player.EnqueueOnce(std::move(audio.Samples));
-                    watch.End();
-                    audio_frame_enqueue_time = watch.Millis<double>();
-
-                    frame_consumed = true;
-                }
-
-                if (frame_consumed) {
-                    watch.Start();
-                    m_CurrentFrame = m_Stream.NextFrame();
-                    watch.End();
-
-                    if (m_CurrentFrame.IsVideo()) {
-                        video_frame_seek_time = watch.Millis<double>();
-                    } else if (m_CurrentFrame.IsAudio()) {
-                        audio_frame_seek_time = watch.Millis<double>();
-                    }
-                }
-
-                // Display Current Video Frame
-                double aspect = double(m_Width) / double(m_Height);
-                ImVec2 space = ImGui::GetContentRegionAvail();
-                ImVec2 display{0, 0};
-
-                if (float(space.x) / float(space.y) > aspect) {
-                    display.y = space.y;
-                    display.x = display.y * aspect;
-                } else {
-                    display.x = space.x;
-                    display.y = display.x / aspect;
-                }
-
-                ImVec2 original_pos = ImGui::GetCursorScreenPos();
-                ImVec2 window_pos = ImGui::GetWindowPos();
-                ImVec2 window_size = ImGui::GetWindowSize();
-
-                ImGui::SetCursorPos(
-                        ImVec2{
-                                (window_size.x - display.x) * 0.5F,
-                                ((window_size.y - display.y) * 0.5F)
-                                + ImGui::GetStyle().WindowPadding.y,
-                        }
-                );
-
-                ImGui::Image((void*) (intptr_t) m_FrontTexture, display);
-
-                ImGui::SetCursorScreenPos(original_pos);
-            }
-            ImGui::End();
-        }
-
-        if (ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGuiDockNode* node = ImGui::GetWindowDockNode();
-
-            if (node) {
-                node->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
-                node->LocalFlags |= ImGuiDockNodeFlags_NoResize;
-            }
-
-            ImVec2 avail = ImGui::GetContentRegionAvail();
-            avail.x -= ImGui::GetStyle().CellPadding.x * 2.0F;
-
-            ImVec2 cursor_start = ImGui::GetCursorPos();
-            int64_t duration = m_Stream.GetDuration();
-            float progress = 0.0F;
-            progress = (m_Elapsed >= duration)
-                       ? 1.0F
-                       : double(m_Elapsed) / double(duration);
-            ImGui::ProgressBar(progress, ImVec2{avail.x * 0.75F, 0}, "");
-
-            ImVec2 min = ImGui::GetItemRectMin();
-            ImVec2 max = ImGui::GetItemRectMax();
-            ImVec2 pos = ImGui::GetMousePos();
-
-            if (ImGui::IsItemClicked()) {
-
-                double normalized_click_pos = (pos.x - min.x) / (max.x - min.x);
-                normalized_click_pos = std::clamp(normalized_click_pos, 0.0, 1.0);
-
-                double new_playback_position = duration * normalized_click_pos;
-                REPLAY_TRACE("Seek Pos {}, {}", normalized_click_pos, new_playback_position / 1e6F);
-                m_Stream.Seek(new_playback_position / 1e6F);
-
-                m_CurrentFrame = m_Stream.NextFrame();
-                while (!m_CurrentFrame.IsValid()) {
-                    m_CurrentFrame = m_Stream.NextFrame();
-                }
-                m_Elapsed = m_CurrentFrame.Timestamp();
-                m_Player.ClearQueue();
-            }
-
-            ImGui::SameLine();
-            static float volume = m_Player.GetVolumeScale();
-            ImGui::SetNextItemWidth(avail.x * 0.25F);
-            if (ImGui::SliderFloat("##", &volume, 0.0F, 1.0F, "Volume %.2f", ImGuiSliderFlags_AlwaysClamp)) {
-                m_Player.SetVolumeScale(volume);
-            }
-
-            ImVec2 cursor_end = ImGui::GetCursorPos();
-            ImVec2 required_size = ImVec2(cursor_end.x - cursor_start.x + 16.0F, cursor_end.y - cursor_start.y + 16.0F);
-            if (node && node->ParentNode) {
-                node->Size = required_size;
-                node->SizeRef = required_size;
-            }
-        }
-        ImGui::End();
+        ShowVideoPlayer();
 
         if (ImGui::Begin("Jobs")) {
         }
@@ -298,6 +160,7 @@ namespace ReplayClipper {
                 ImGui::EndTable();
             }
         }
+        ImGui::End();
     }
 
     void Clipper::ShowFileTreeNavigator() {
@@ -408,4 +271,210 @@ namespace ReplayClipper {
         }
         ImGui::End();
     }
+
+    void Clipper::ShowVideoPlayer() {
+
+        {
+            m_Elapsed += static_cast<uint64_t>(GetMetrics().DeltaSeconds * 1e6);
+            if (ImGui::Begin("Video Player")) {
+                Stopwatch watch{};
+
+                bool frame_consumed = false;
+
+                // VIDEO
+                if (m_CurrentFrame.IsVideo() && m_Elapsed >= m_CurrentFrame.Timestamp()) {
+                    watch.Start();
+                    const Frame::video_frame_t& video = m_CurrentFrame;
+                    glBindTexture(GL_TEXTURE_2D, m_FrontTexture);
+                    glTexImage2D(
+                            GL_TEXTURE_2D, 0, GL_RGBA,
+                            video.Width, video.Height,
+                            0,
+                            GL_RGB,
+                            GL_UNSIGNED_BYTE,
+                            video.Pixels.data()
+                    );
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    m_Width = video.Width;
+                    m_Height = video.Height;
+                    watch.End();
+                    video_frame_upload_time = watch.Millis<double>();
+                    frame_consumed = true;
+
+                    // AUDIO
+                } else if (m_CurrentFrame.IsAudio()) {
+                    watch.Start();
+                    Frame::audio_frame_t& audio = m_CurrentFrame;
+                    m_Player.EnqueueOnce(std::move(audio.Samples));
+                    watch.End();
+                    audio_frame_enqueue_time = watch.Millis<double>();
+                    frame_consumed = true;
+                }
+
+                if (frame_consumed) {
+                    watch.Start();
+                    m_CurrentFrame = m_Stream.NextFrame();
+                    watch.End();
+
+                    if (m_CurrentFrame.IsVideo()) {
+                        video_frame_seek_time = watch.Millis<double>();
+                    } else if (m_CurrentFrame.IsAudio()) {
+                        audio_frame_seek_time = watch.Millis<double>();
+                    }
+                }
+
+                // Display Current Video Frame
+                double aspect = double(m_Width) / double(m_Height);
+                ImVec2 space = ImGui::GetContentRegionAvail();
+                ImVec2 display{0, 0};
+
+                if (float(space.x) / float(space.y) > aspect) {
+                    display.y = space.y;
+                    display.x = display.y * aspect;
+                } else {
+                    display.x = space.x;
+                    display.y = display.x / aspect;
+                }
+
+                ImVec2 original_pos = ImGui::GetCursorScreenPos();
+                ImVec2 window_pos = ImGui::GetWindowPos();
+                ImVec2 window_size = ImGui::GetWindowSize();
+
+                ImGui::SetCursorPos(
+                        ImVec2{
+                                (window_size.x - display.x) * 0.5F,
+                                ((window_size.y - display.y) * 0.5F)
+                                + ImGui::GetStyle().WindowPadding.y,
+                        }
+                );
+
+                ImGui::Image((void*) (intptr_t) m_FrontTexture, display);
+
+                ImGui::SetCursorScreenPos(original_pos);
+            }
+            ImGui::End();
+        }
+
+        auto seconds_to_hms_str = [](double time_in_seconds) -> std::string {
+            int hours = time_in_seconds / 3600;
+            int minutes = time_in_seconds / 60;
+            int seconds = int(time_in_seconds) % 60;
+            return std::format("{:02}:{:02}:{:02}", hours, minutes, seconds);
+        };
+
+        if (ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGuiDockNode* node = ImGui::GetWindowDockNode();
+
+            if (node) {
+                node->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
+                node->LocalFlags |= ImGuiDockNodeFlags_NoResize;
+            }
+
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            avail.x -= ImGui::GetStyle().CellPadding.x * 2.0F;
+
+            ImVec2 cursor_start = ImGui::GetCursorPos();
+            int64_t duration = m_Stream.GetDuration();
+            float progress = 0.0F;
+            progress = (m_Elapsed >= duration)
+                       ? 1.0F
+                       : double(m_Elapsed) / double(duration);
+
+            std::string total_duration_str = seconds_to_hms_str(double(duration) / double(1e6));
+            std::string cur_stream_time_str = seconds_to_hms_str(double(m_Elapsed) / double(1e6));
+            std::string progress_str = std::format("{}/{}", cur_stream_time_str, total_duration_str);
+
+            // the fuck is this shit lmao
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.88F, 0.88F, 0.88F, 1.0F});
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.1F, 0.1F, 0.1F, 1.0F});
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4{0.5F, 0.5F, 0.50F, 0.65F});
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{1.0F, 0.1F, 0.1F, 1.0F});
+
+            ImGui::ProgressBar(progress, ImVec2{avail.x * 0.75F, 0}, "");
+
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
+
+            ImVec2 min = ImGui::GetItemRectMin();
+            ImVec2 max = ImGui::GetItemRectMax();
+            ImVec2 pos = ImGui::GetMousePos();
+
+            double normalized_click_pos = (pos.x - min.x) / (max.x - min.x);
+            normalized_click_pos = std::clamp(normalized_click_pos, 0.0, 1.0);
+            double new_playback_position = duration * normalized_click_pos;
+
+            // Mouse Position Time
+            if (ImGui::IsItemHovered() && ImGui::BeginTooltip()) {
+                std::string fmt = seconds_to_hms_str(new_playback_position / double(1e6));
+                ImGui::Text("%s", fmt.c_str());
+                ImGui::EndTooltip();
+            }
+
+            if (ImGui::IsItemClicked()) {
+
+                REPLAY_TRACE("Seek Pos {}, {}", normalized_click_pos, new_playback_position / 1e6F);
+                m_Stream.Seek(new_playback_position / 1e6F);
+
+                m_CurrentFrame = m_Stream.NextFrame();
+                while (!m_CurrentFrame.IsValid()) {
+                    m_CurrentFrame = m_Stream.NextFrame();
+                }
+                m_Elapsed = m_CurrentFrame.Timestamp();
+                m_Player.ClearQueue();
+            }
+
+            ImGui::SameLine();
+            static float volume = m_Player.GetVolumeScale();
+            ImGui::SetNextItemWidth(avail.x * 0.25F);
+            if (ImGui::SliderFloat("##", &volume, 0.0F, 1.0F, "Volume %.2f", ImGuiSliderFlags_AlwaysClamp)) {
+                m_Player.SetVolumeScale(volume);
+            }
+
+            auto quick_button = [](const char* text, bool same_line = true) -> bool {
+                if (same_line) {
+                    ImGui::SameLine(0.0F, 0.0F);
+                }
+                return ImGui::Button(text, ImVec2{0.0F, 32.0F});
+            };
+
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{0.2F, 0.2F, 0.2F, 1.0F});
+            quick_button("Pause", false);
+            quick_button("Stop", true);
+            quick_button("Seek Back", true);
+            quick_button("Seek Forward", true);
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+
+            {
+
+                ImGui::SameLine();
+                ImVec2 p0 = ImGui::GetCursorScreenPos();
+                ImVec2 p1{p0.x, p0.y};
+                ImVec2 p2{p0.x, p0.y + 32.0F};
+
+                ImGui::GetWindowDrawList()->AddLine(p1, p2, IM_COL32(30, 30, 30, 255), 4.0F);
+
+                ImGui::SameLine();
+                ImVec2 cpos = ImGui::GetCursorPos();
+                cpos.x += 6.0F;
+                cpos.y += 8.0F;
+                ImGui::SetCursorPos(cpos);
+                ImGui::Text("%s", progress_str.c_str());
+            }
+
+            ImVec2 cursor_end = ImGui::GetCursorPos();
+            ImVec2 required_size = ImVec2(
+                    cursor_end.x - cursor_start.x + 16.0F,
+                    cursor_end.y - cursor_start.y + 16.0F);
+            if (node && node->ParentNode) {
+                node->Size = required_size;
+                node->SizeRef = required_size;
+            }
+        }
+        ImGui::End();
+    }
+
 } // ReplayClipper

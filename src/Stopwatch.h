@@ -23,7 +23,7 @@ namespace ReplayClipper {
         Instant m_End;
 
       public:
-        Stopwatch() = default;
+        explicit Stopwatch() : m_Start(Clock::now()), m_End(m_Start) {};
         ~Stopwatch() = default;
 
       public:
@@ -33,6 +33,9 @@ namespace ReplayClipper {
         }
         inline void End() noexcept {
             m_End = Clock::now();
+        }
+        inline void Stop() noexcept {
+            End();
         }
 
       public:
