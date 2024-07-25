@@ -11,6 +11,7 @@ namespace ReplayClipper {
 
     AudioPlayer::AudioPlayer()
             : m_Handle(RtAudio::UNSPECIFIED),
+              m_Mutex(),
               m_Index(0),
               m_AudioQueues(),
               m_Channels(-1),
@@ -82,6 +83,7 @@ namespace ReplayClipper {
     }
 
     bool AudioPlayer::CloseStream() {
+        std::unique_lock guard{m_Mutex};
         if (!IsStreamOpen()) {
             return false;
         }
@@ -98,14 +100,17 @@ namespace ReplayClipper {
     }
 
     void AudioPlayer::Play() noexcept {
+        std::unique_lock guard{m_Mutex};
         m_Handle.startStream();
     }
 
     void AudioPlayer::Pause() noexcept {
+        std::unique_lock guard{m_Mutex};
         m_Handle.stopStream();
     }
 
     void AudioPlayer::Resume() noexcept {
+        std::unique_lock guard{m_Mutex};
         m_Handle.startStream();
     }
 
@@ -117,7 +122,6 @@ namespace ReplayClipper {
             RtAudioStreamStatus status,
             void* self_raw
     ) {
-
         AudioPlayer* self = static_cast<AudioPlayer*>(self_raw);
         float* out = static_cast<float*>(out_raw);
 
@@ -129,6 +133,9 @@ namespace ReplayClipper {
             );
             return -1;
         }
+
+        // Pretty much exclusive access 99% of the time
+        std::unique_lock guard{self->m_Mutex};
 
         const size_t bytes_to_write = frames * self->m_Channels * sizeof(float);
 

@@ -15,14 +15,8 @@
 
 namespace ReplayClipper {
 
-    // TODO: Find a good way to deal with time units. Likely using nanoseconds internally for
-    //  everything. Input functions will just assume you provided nanoseconds and rescale internally.
-
-    // TODO: Replace UI Code with function calls for clarity.
     // TODO: Clipping Jobs
     // TODO: Move the Windows API usage out
-    // TODO: Wherever you see 1e6 that needs to be replaced with a proper time conversion as it is
-    //  relevant to the stream.
 
     // @off
     static int      width            = 0;
@@ -40,6 +34,9 @@ namespace ReplayClipper {
     static double audio_frame_enqueue_time = 0.0;
     static double audio_frame_seek_time    = 0.0;
 
+    static size_t total_video_frames = 0;
+    static size_t total_audio_frames = 0;
+
     // @on
 
     int Clipper::Start() {
@@ -55,8 +52,7 @@ namespace ReplayClipper {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-        REPLAY_TRACE("Working Dir: '{}'", fs::absolute(m_DirNavigator.GetParent()).generic_string());
-
+        m_Elapsed = 0;
         m_Stream.OpenStream("res/1.mp4");
         m_CurrentFrame = m_Stream.NextFrame();
 
@@ -137,12 +133,14 @@ namespace ReplayClipper {
                 append_table("Video Time", "%llu", m_Elapsed);
 
                 append_header_row("Video Frame");
+                append_table("Total Video Frames", "%llu", total_video_frames);
                 append_table("Width", "%d", width);
                 append_table("Height", "%d", height);
                 append_table("Timestamp", "%llu", video_timestamp);
                 append_table("Size", "%.3fmb", video_frame_size);
 
                 append_header_row("Audio Frame");
+                append_table("Total Audio Frames", "%llu", total_audio_frames);
                 append_table("Channels", "%d", channel);
                 append_table("SampleRate", "%d", sample_rate);
                 append_table("Timestamp", "%llu", audio_timestamp);
@@ -188,8 +186,12 @@ namespace ReplayClipper {
                             PWSTR pszFilePath = nullptr;
                             psiResult->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
 
-                            // Output the selected directory path
-                            m_DirNavigator.SetRoot(fs::path{pszFilePath});
+                            fs::path dir{pszFilePath};
+
+                            if (fs::is_directory(dir)) {
+                                dir = fs::absolute(dir);
+                                m_DirNavigator.SetRoot(dir);
+                            }
 
                             // Cleanup
                             CoTaskMemFree(pszFilePath);
@@ -223,14 +225,17 @@ namespace ReplayClipper {
                 has_new_root = false;
 
                 const fs::path& root = m_DirNavigator.GetParent();
-                std::string root_name = root.filename().generic_string();
+                std::u8string u8_root = root.filename().generic_u8string();
+                std::string root_name{u8_root.begin(), u8_root.end()};
 
                 ImGui::SetNextItemOpen(true);
                 if (ImGui::TreeNode(root_name.c_str())) {
 
                     for (size_t i = 0; i < m_DirNavigator.ChildrenCount(); ++i) {
                         const fs::path& child = m_DirNavigator[i];
-                        std::string child_name = child.filename().generic_string();
+
+                        std::u8string child_name_u8 = child.filename().generic_u8string();
+                        std::string child_name{child_name_u8.begin(), child_name_u8.end()};
 
                         int child_flags = ImGuiTreeNodeFlags_SpanAvailWidth;
                         if (fs::is_regular_file(child)) {
@@ -247,15 +252,14 @@ namespace ReplayClipper {
                             } else if (ImGui::IsItemClicked() && fs::is_regular_file(child)) {
                                 // TODO: Cleanup
                                 if (m_Stream.OpenStream(child)) {
+                                    total_video_frames = 0;
+                                    total_audio_frames = 0;
                                     m_Elapsed = 0;
-                                    m_CurrentFrame = Frame{};
-                                    do {
-                                        m_CurrentFrame = m_Stream.NextFrame();
-                                    } while (!m_CurrentFrame.IsValid());
+                                    m_CurrentFrame = m_Stream.NextFrame();
 
                                     m_Player.CloseStream();
                                     m_Player.OpenStream(m_Stream.GetChannels(), m_Stream.GetSampleRate());
-                                    m_Player.Resume();
+                                    m_Player.Play();
                                 }
 
                             }
@@ -275,7 +279,7 @@ namespace ReplayClipper {
     void Clipper::ShowVideoPlayer() {
 
         {
-            m_Elapsed += static_cast<uint64_t>(GetMetrics().DeltaSeconds * 1e6);
+            m_Elapsed += GetMetrics().Delta;
             if (ImGui::Begin("Video Player")) {
                 Stopwatch watch{};
 
@@ -309,6 +313,8 @@ namespace ReplayClipper {
                     watch.End();
                     audio_frame_enqueue_time = watch.Millis<double>();
                     frame_consumed = true;
+                } else if (!m_CurrentFrame.IsValid() && m_Stream.IsOpen()) {
+                    m_CurrentFrame = m_Stream.NextFrame();
                 }
 
                 if (frame_consumed) {
@@ -317,8 +323,10 @@ namespace ReplayClipper {
                     watch.End();
 
                     if (m_CurrentFrame.IsVideo()) {
+                        ++total_video_frames;
                         video_frame_seek_time = watch.Millis<double>();
                     } else if (m_CurrentFrame.IsAudio()) {
+                        ++total_audio_frames;
                         audio_frame_seek_time = watch.Millis<double>();
                     }
                 }
@@ -355,10 +363,11 @@ namespace ReplayClipper {
             ImGui::End();
         }
 
-        auto seconds_to_hms_str = [](double time_in_seconds) -> std::string {
-            int hours = time_in_seconds / 3600;
-            int minutes = time_in_seconds / 60;
-            int seconds = int(time_in_seconds) % 60;
+        auto seconds_to_hms_str = [](int64_t nano) -> std::string {
+            int64_t time_seconds = nano / int64_t(1e9);
+            int hours = time_seconds / 3600LL;
+            int minutes = time_seconds / 60LL;
+            int seconds = time_seconds % 60LL;
             return std::format("{:02}:{:02}:{:02}", hours, minutes, seconds);
         };
 
@@ -380,22 +389,23 @@ namespace ReplayClipper {
                        ? 1.0F
                        : double(m_Elapsed) / double(duration);
 
-            std::string total_duration_str = seconds_to_hms_str(double(duration) / double(1e6));
-            std::string cur_stream_time_str = seconds_to_hms_str(double(m_Elapsed) / double(1e6));
+            std::string total_duration_str = seconds_to_hms_str(duration);
+            std::string cur_stream_time_str = seconds_to_hms_str(m_Elapsed);
             std::string progress_str = std::format("{}/{}", cur_stream_time_str, total_duration_str);
 
-            // the fuck is this shit lmao
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.88F, 0.88F, 0.88F, 1.0F});
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.1F, 0.1F, 0.1F, 1.0F});
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4{0.5F, 0.5F, 0.50F, 0.65F});
-            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{1.0F, 0.1F, 0.1F, 1.0F});
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.88F, 0.88F, 0.88F, 1.0F});
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4{0.1F, 0.1F, 0.1F, 1.0F});
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4{0.5F, 0.5F, 0.50F, 0.65F});
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4{1.0F, 0.1F, 0.1F, 1.0F});
 
-            ImGui::ProgressBar(progress, ImVec2{avail.x * 0.75F, 0}, "");
+                ImGui::ProgressBar(progress, ImVec2{avail.x * 0.75F, 0}, "");
 
-            ImGui::PopStyleColor();
-            ImGui::PopStyleColor();
-            ImGui::PopStyleColor();
-            ImGui::PopStyleColor();
+                ImGui::PopStyleColor();
+                ImGui::PopStyleColor();
+                ImGui::PopStyleColor();
+                ImGui::PopStyleColor();
+            }
 
             ImVec2 min = ImGui::GetItemRectMin();
             ImVec2 max = ImGui::GetItemRectMax();
@@ -403,24 +413,21 @@ namespace ReplayClipper {
 
             double normalized_click_pos = (pos.x - min.x) / (max.x - min.x);
             normalized_click_pos = std::clamp(normalized_click_pos, 0.0, 1.0);
-            double new_playback_position = duration * normalized_click_pos;
+            int64_t new_playback_position = duration * normalized_click_pos;
 
             // Mouse Position Time
             if (ImGui::IsItemHovered() && ImGui::BeginTooltip()) {
-                std::string fmt = seconds_to_hms_str(new_playback_position / double(1e6));
+                std::string fmt = seconds_to_hms_str(new_playback_position);
                 ImGui::Text("%s", fmt.c_str());
                 ImGui::EndTooltip();
             }
 
-            if (ImGui::IsItemClicked()) {
-
-                REPLAY_TRACE("Seek Pos {}, {}", normalized_click_pos, new_playback_position / 1e6F);
-                m_Stream.Seek(new_playback_position / 1e6F);
-
-                m_CurrentFrame = m_Stream.NextFrame();
-                while (!m_CurrentFrame.IsValid()) {
+            if (ImGui::IsItemClicked() && m_Stream.Seek(new_playback_position)) {
+                m_Elapsed = 0;
+                m_CurrentFrame = Frame{};
+                do {
                     m_CurrentFrame = m_Stream.NextFrame();
-                }
+                } while (!m_CurrentFrame.IsVideo());
                 m_Elapsed = m_CurrentFrame.Timestamp();
                 m_Player.ClearQueue();
             }

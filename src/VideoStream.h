@@ -33,16 +33,20 @@ namespace ReplayClipper {
 
       public:
         explicit Frame() : m_Data(nullptr) {}
+
         explicit Frame(audio_frame_t&& audio) : m_Data(std::move(audio)) {}
+
         explicit Frame(video_frame_t&& video) : m_Data(std::move(video)) {}
 
       public:
         bool IsValid() const noexcept {
             return !std::holds_alternative<nullptr_t>(m_Data);
         }
+
         bool IsVideo() const noexcept {
             return std::holds_alternative<video_frame_t>(m_Data);
         }
+
         bool IsAudio() const noexcept {
             return std::holds_alternative<audio_frame_t>(m_Data);
         }
@@ -51,6 +55,7 @@ namespace ReplayClipper {
         operator const video_frame_t&() const noexcept {
             return std::get<video_frame_t>(m_Data);
         }
+
         operator video_frame_t&() noexcept {
             return std::get<video_frame_t>(m_Data);
         }
@@ -59,6 +64,7 @@ namespace ReplayClipper {
         operator const audio_frame_t&() const noexcept {
             return std::get<audio_frame_t>(m_Data);
         }
+
         operator audio_frame_t&() noexcept {
             return std::get<audio_frame_t>(m_Data);
         }
@@ -87,7 +93,7 @@ namespace ReplayClipper {
         std::unique_ptr<Impl> m_Impl;
 
       public:
-        VideoStream(int pool_size = 5);
+        VideoStream(int pool_size = 10);
         ~VideoStream();
 
       public:
@@ -98,6 +104,7 @@ namespace ReplayClipper {
 
       public:
         bool IsOpen() const noexcept;
+
         bool OpenStream(const fs::path& file);
 
       public:
@@ -105,6 +112,7 @@ namespace ReplayClipper {
 
       public:
         bool Seek(double seconds) noexcept;
+        bool Seek(int64_t nanos) noexcept;
 
       public:
         unsigned int GetChannels() const noexcept;

@@ -22,16 +22,19 @@ namespace ReplayClipper {
 
       public:
         ByteStream() : m_Data(), m_Position(0) {}
+
         ByteStream(std::vector<uint8_t>&& data) : m_Data(std::move(data)), m_Position(0) {}
 
       public:
         inline size_t Length() const noexcept {
             return m_Data.size();
         }
+
         inline size_t Remaining() const noexcept {
             assert(m_Position <= Length());
             return Length() - m_Position;
         }
+
         inline const uint8_t* Data() const noexcept {
             return m_Data.data();
         }
@@ -40,6 +43,7 @@ namespace ReplayClipper {
         inline void Reset() noexcept {
             m_Position = 0;
         }
+
         inline size_t Fetch(uint8_t* out, size_t count) noexcept {
             assert(out != nullptr);
             assert(Length() >= m_Position);
@@ -61,6 +65,7 @@ namespace ReplayClipper {
 
       private:
         RtAudio m_Handle;
+        std::mutex m_Mutex;
         std::atomic_int m_Index;
         std::deque<ByteStream> m_AudioQueues[2];
         int m_Channels;
@@ -100,6 +105,7 @@ namespace ReplayClipper {
 
       public:
         void ClearQueue() {
+            std::unique_lock guard{m_Mutex};
             m_AudioQueues[0].clear();
             m_AudioQueues[1].clear();
         }

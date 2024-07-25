@@ -27,6 +27,8 @@ extern "C" {
 
 namespace ReplayClipper {
 
+    constexpr AVRational NANO_TIME_BASE = {1, static_cast<int>(1e9)};
+
     //############################################################################//
     // | Lazy Video Stream |
     //############################################################################//
@@ -83,7 +85,8 @@ namespace ReplayClipper {
         bool OpenStream(const fs::path& path) {
             Reset();
 
-            std::string path_str = path.generic_string();
+            std::u8string path_str_u8 = path.generic_u8string();
+            std::string path_str{path_str_u8.begin(), path_str_u8.end()};
 
             if (avformat_open_input(&m_FormatContext, path_str.c_str(), nullptr, nullptr) < 0) {
                 REPLAY_TRACE("Failed to open input '{}'", path_str);
@@ -216,13 +219,17 @@ namespace ReplayClipper {
         }
 
       public:
-        bool Seek(double ts) noexcept {
+        bool Seek(int64_t time) noexcept {
+            // Assumes time is in AV_TIMEBASE_Q
+
             if (!IsOpen()) {
                 return false;
             }
 
-            int res = av_seek_frame(GetFormatContext(), -1, ts * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD);
+            int res = av_seek_frame(m_FormatContext, -1, time, AVSEEK_FLAG_BACKWARD);
+
             if (res < 0) {
+                REPLAY_WARN("Failed to seek to {}", time);
                 return false;
             }
 
@@ -232,15 +239,13 @@ namespace ReplayClipper {
             // Walk forward until we get to the desired timestamp
             Stopwatch watch{};
             watch.Start();
-            int64_t time = int64_t(ts * AV_TIME_BASE);
             int64_t frame_time_rescaled = 0;
             size_t frames_skipped = 0;
             AVFrame* temp = av_frame_alloc();
             bool got_frame = false;
             do {
                 got_frame = NextFrame(temp, STREAM_FLAG_VIDEO);
-                constexpr int64_t OFFSET = AV_TIME_BASE / 2;
-                frame_time_rescaled = av_rescale_q(temp->pts, temp->time_base, AV_TIME_BASE_Q) + OFFSET;
+                frame_time_rescaled = av_rescale_q(temp->pts, temp->time_base, AV_TIME_BASE_Q);
                 ++frames_skipped;
             } while (got_frame && time > frame_time_rescaled);
             watch.End();
@@ -253,7 +258,6 @@ namespace ReplayClipper {
                     watch.Millis<float>()
             );
             av_frame_free(&temp);
-
 
             return true;
         }
@@ -323,7 +327,7 @@ namespace ReplayClipper {
         Frame::video_frame_t& video = out;
         video.Width = width;
         video.Height = height;
-        video.Timestamp = av_rescale_q(src_frame->pts, src_frame->time_base, AV_TIME_BASE_Q);
+        video.Timestamp = av_rescale_q(src_frame->pts, src_frame->time_base, NANO_TIME_BASE);
         video.Pixels.resize(dest_size, 255);
 
         // Expected Input; We only care for the first of each
@@ -402,7 +406,7 @@ namespace ReplayClipper {
         // Setting output
         audio.SampleRate = frame->sample_rate;
         audio.Channels = frame->ch_layout.nb_channels;
-        audio.Timestamp = av_rescale_q(frame->pts, frame->time_base, AV_TIME_BASE_Q);
+        audio.Timestamp = av_rescale_q(frame->pts, frame->time_base, NANO_TIME_BASE);
 
         swr_free(&ctx);
         return true;
@@ -414,72 +418,146 @@ namespace ReplayClipper {
 
     class FramePool {
 
-      private:
-        int m_PoolSize;
-        std::deque<Frame> m_Pool;
+        // - NOTE -
+        // Atomic Ringbuffer queue like structure
+        //
+
+      private: // @off
+        const int          m_PoolSize; // The fixed size
+        std::vector<Frame> m_Pool;     // Fixed size framepool
+        std::atomic_int    m_Head;     // Index of next element to store
+        std::atomic_int    m_Tail;     // Index of next element to dequeue
+        // @on
 
       public:
-        FramePool(int size) : m_PoolSize(size), m_Pool() {
-
+        explicit FramePool(int size)
+                : m_PoolSize(size),
+                  m_Pool(m_PoolSize),
+                  m_Head(0),
+                  m_Tail(0) {
+            REPLAY_ASSERT(size > 1);
         }
 
         ~FramePool() = default;
 
       public:
-        bool HasSpace() const noexcept {
-            return m_Pool.size() <= m_PoolSize;
+        int MaxPoolSize() const noexcept {
+            return m_PoolSize;
         }
 
-        bool HasFrames() const noexcept {
-            return !m_Pool.empty();
+        int CurrentSize() const noexcept {
+            int head = m_Head.load(std::memory_order_acquire);
+            int tail = m_Tail.load(std::memory_order_acquire);
+            if (head >= tail) {
+                return head - tail;
+            } else {
+                return MaxPoolSize() + head - tail;
+            }
         }
 
       public:
+        bool IsEmpty() const noexcept {
+            return 0 >= CurrentSize();
+        }
+
+        bool HasSpace() const noexcept {
+            int current_size = CurrentSize();
+            return current_size < (MaxPoolSize() - 1);
+        }
+
+        bool Enqueue(Frame& frame) noexcept {
+            int head = m_Head.load(std::memory_order_relaxed);
+            int next_head = (head + 1) % MaxPoolSize();
+
+            if (next_head != m_Tail.load(std::memory_order_acquire)) {
+                m_Pool[head] = std::move(frame);
+                m_Head.store(next_head, std::memory_order_release);
+                return true;
+            }
+
+            return false;
+        }
+
+        bool Dequeue(Frame& out) noexcept {
+            int tail = m_Tail.load(std::memory_order_relaxed);
+            if (tail != m_Head.load(std::memory_order_acquire)) {
+                out = std::move(m_Pool[tail]);
+                m_Pool[tail] = Frame{}; // null-frame
+                m_Tail.store((tail + 1) % MaxPoolSize());
+                return true;
+            }
+            return false;
+        }
+
+      public:
+        void Clear() noexcept {
+            m_Head.store(0);
+            m_Tail.store(0);
+            for (int i = 0; i < m_PoolSize; ++i) {
+                m_Pool[i] = Frame{}; // null-frame
+            }
+        }
+
     };
 
     class VideoStream::Impl {
 
       private:
         LazyVideoStream m_Stream;
+        AVFrame* m_Frame;
         FramePool m_FramePool;
+
+      private:
+        bool m_IsAlive;
+        std::condition_variable m_Cond;
+        std::mutex m_Mutex;
+        std::thread m_PoolThread;
 
       public:
         Impl(int pool_size)
                 : m_Stream(),
+                  m_Frame(av_frame_alloc()),
+                  m_IsAlive(true),
+                  m_Cond(),
+                  m_Mutex(),
+                  m_PoolThread(ImplPoolThread, this),
                   m_FramePool(pool_size) {
 
+            REPLAY_ASSERT(m_Frame != nullptr);
+        }
+
+        ~Impl() {
+            m_IsAlive = false;
+            std::unique_lock guard{m_Mutex};
+            guard.unlock();
+            m_Cond.notify_all();
+            if (m_PoolThread.joinable()) {
+                m_PoolThread.join();
+            }
+            av_frame_free(&m_Frame);
         }
 
       public:
         bool OpenStream(const fs::path& path) {
-            return m_Stream.OpenStream(path);
+            std::unique_lock guard{m_Mutex};
+            bool is_open = m_Stream.OpenStream(path);
+            if (is_open) {
+                m_FramePool.Clear();
+                guard.unlock();
+                m_Cond.notify_all();
+                while (m_FramePool.IsEmpty()) {
+                    std::this_thread::yield();
+                }
+            }
+            return is_open;
         }
 
       public:
         Frame NextFrame() noexcept {
-            AVFrame* frame = av_frame_alloc();
-            REPLAY_ASSERT(frame);
-            m_Stream.NextFrame(frame);
-
-            // Video
-            if (frame->width > 0 && frame->height > 0) {
-                Frame::video_frame_t video{};
-                Frame out{std::move(video)};
-                ConvertToRGB(frame, out);
-                av_frame_free(&frame);
-                return out;
-
-                // Audio
-            } else if (frame->sample_rate > 0 && frame->nb_samples > 0) {
-                Frame::audio_frame_t audio{};
-                ConvertToPackedAudio(frame, audio);
-                av_frame_free(&frame);
-                return Frame{std::move(audio)};
-            }
-
-            // null frame
-            av_frame_free(&frame);
-            return Frame{};
+            Frame frame{};
+            bool dequeued = m_FramePool.Dequeue(frame);
+            m_Cond.notify_all();
+            return std::move(frame);
         }
 
       public:
@@ -489,7 +567,28 @@ namespace ReplayClipper {
 
       public:
         inline bool Seek(double ts) noexcept {
-            return m_Stream.Seek(ts);
+            REPLAY_ASSERT(false);
+            return m_Stream.Seek(int64_t(ts * double{AV_TIME_BASE}));
+        }
+
+        inline bool Seek(int64_t ts) noexcept {
+            {
+                std::unique_lock guard{m_Mutex};
+                m_FramePool.Clear();
+                bool ok = m_Stream.Seek(ts);
+
+                if (!ok) {
+                    REPLAY_WARN("Seek not ok");
+                    return false;
+                }
+            }
+            m_Cond.notify_all();
+
+            while (m_FramePool.IsEmpty()) {
+                std::this_thread::yield();
+            }
+
+            return true;
         }
 
       public:
@@ -503,7 +602,69 @@ namespace ReplayClipper {
 
       public:
         int64_t GetDuration() const noexcept {
-            return m_Stream.GetDuration();
+            return av_rescale_q(m_Stream.GetDuration(), AV_TIME_BASE_Q, NANO_TIME_BASE);
+        }
+
+      private:
+        Frame NextFrameInternal() noexcept {
+
+            if (m_Frame == nullptr) {
+                REPLAY_ERROR("AVFrame allocation failed");
+                return Frame{};
+            }
+            bool got_frame = m_Stream.NextFrame(m_Frame);
+
+            if (!got_frame) {
+                av_frame_unref(m_Frame);
+                return Frame{};
+            }
+
+            // Video
+            if (m_Frame->width > 0 && m_Frame->height > 0) {
+                Frame::video_frame_t video{};
+                ConvertToRGB(m_Frame, video);
+                av_frame_unref(m_Frame);
+                return Frame{std::move(video)};
+
+                // Audio
+            } else if (m_Frame->sample_rate > 0 && m_Frame->nb_samples > 0) {
+                Frame::audio_frame_t audio{};
+                ConvertToPackedAudio(m_Frame, audio);
+                av_frame_unref(m_Frame);
+                return Frame{std::move(audio)};
+            }
+
+            return Frame{};
+        }
+
+      private:
+        static void ImplPoolThread(Impl* impl) noexcept {
+
+            // TODO: Implement a better partial blocking system; Note that Seeking needs to be strongly synchronised.
+
+            while (true) {
+
+                std::unique_lock guard{impl->m_Mutex};
+
+                if (!impl->m_IsAlive) {
+                    return;
+                }
+
+                if (!impl->m_Stream.IsOpen()) {
+                    impl->m_Cond.wait(guard);
+                    continue;
+                }
+
+                // Push 'N' Frames
+                int frames_to_get = (impl->m_FramePool.MaxPoolSize() - 1) - impl->m_FramePool.CurrentSize();
+                for (int i = 0; i < frames_to_get; ++i) {
+                    Frame frame = impl->NextFrameInternal();
+                    bool ok = impl->m_FramePool.Enqueue(frame);
+                    REPLAY_ASSERT(ok); // Should hold in a single producer context
+                }
+
+                impl->m_Cond.wait(guard);
+            }
         }
     };
 
@@ -542,6 +703,11 @@ namespace ReplayClipper {
 
     bool VideoStream::Seek(double seconds) noexcept {
         return m_Impl->Seek(seconds);
+    }
+
+    bool VideoStream::Seek(int64_t nano) noexcept {
+        int64_t value = av_rescale_q_rnd(nano, NANO_TIME_BASE, AV_TIME_BASE_Q, AV_ROUND_NEAR_INF);
+        return m_Impl->Seek(value);
     }
 
     unsigned int VideoStream::GetSampleRate() const noexcept {

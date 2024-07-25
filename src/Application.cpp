@@ -62,6 +62,9 @@ namespace ReplayClipper {
 
         Stopwatch watch{};
 
+        double frame_rate_accum = 0.0;
+        int frame_rate_tick = 0;
+
         while (!glfwWindowShouldClose(m_Window)) {
 
             watch.Start();
@@ -104,11 +107,19 @@ namespace ReplayClipper {
             glfwSwapBuffers(m_Window);
 
             watch.End();
+
             m_Metrics.Delta = watch.Nano<size_t>();
             m_Metrics.DeltaSeconds = watch.Seconds<float>();
             m_Metrics.Elapsed += m_Metrics.Delta;
             m_Metrics.FrameCount++;
-            m_Metrics.Framerate = 1.0F / m_Metrics.DeltaSeconds;
+
+            frame_rate_accum += m_Metrics.DeltaSeconds;
+            frame_rate_tick++;
+            m_Metrics.Framerate = 1.0 / (frame_rate_accum / double(frame_rate_tick));
+            if (frame_rate_tick > 1000) {
+                frame_rate_accum = 0.0;
+                frame_rate_tick = 0;
+            }
 
             if (!should_continue) break;
         }
