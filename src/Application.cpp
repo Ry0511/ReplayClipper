@@ -62,12 +62,25 @@ namespace ReplayClipper {
 
         Stopwatch watch{};
 
+        double largest_delta_ts = 0.0;
         double frame_rate_accum = 0.0;
         int frame_rate_tick = 0;
 
         while (!glfwWindowShouldClose(m_Window)) {
 
             watch.Start();
+
+            { // Primitive Frame Locking
+                constexpr size_t TARGET_FRAMERATE = NANOSECONDS_SCALE / 300LLU;
+                Stopwatch temp{};
+                size_t error = m_Metrics.Delta;
+                while (error < TARGET_FRAMERATE) {
+                    temp.Start();
+                    std::this_thread::yield();
+                    temp.Stop();
+                    error += temp.Nano<size_t>();
+                }
+            }
 
             glfwPollEvents();
 
@@ -76,18 +89,6 @@ namespace ReplayClipper {
             int fb_width, fb_height;
             glfwGetFramebufferSize(m_Window, &fb_width, &fb_height);
             glViewport(0, 0, fb_width, fb_height);
-
-            { // Primitive Frame Locking
-                constexpr size_t TARGET_FRAMERATE = NANOSECONDS_SCALE / 120LLU;
-                Stopwatch temp{};
-                size_t error = m_Metrics.Delta;
-                while (error < TARGET_FRAMERATE) {
-                    temp.Start();
-                    std::this_thread::yield();
-                    temp.End();
-                    error -= temp.Nano<size_t>();
-                }
-            }
 
             // ImGui
             ImGui_ImplOpenGL3_NewFrame();
@@ -106,7 +107,7 @@ namespace ReplayClipper {
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(m_Window);
 
-            watch.End();
+            watch.Stop();
 
             m_Metrics.Delta = watch.Nano<size_t>();
             m_Metrics.DeltaSeconds = watch.Seconds<float>();
@@ -116,9 +117,15 @@ namespace ReplayClipper {
             frame_rate_accum += m_Metrics.DeltaSeconds;
             frame_rate_tick++;
             m_Metrics.Framerate = 1.0 / (frame_rate_accum / double(frame_rate_tick));
-            if (frame_rate_tick > 1000) {
+            if (frame_rate_tick > 512) {
                 frame_rate_accum = 0.0;
                 frame_rate_tick = 0;
+                largest_delta_ts = 0.0;
+            }
+
+            if (largest_delta_ts < m_Metrics.DeltaSeconds) {
+                largest_delta_ts = m_Metrics.DeltaSeconds;
+                m_Metrics.LowFramerate = 1.0 / largest_delta_ts;
             }
 
             if (!should_continue) break;
@@ -150,6 +157,7 @@ namespace ReplayClipper {
                 ImGui::TableNextColumn();
                 ImGui::TextColored(ImVec4{0.15F, 0.65F, 0.89F, 1.0F}, "Application Timings");
 
+                append_table("Low Framerate", "%.2f", m_Metrics.LowFramerate);
                 append_table("Framerate", "%.2f", m_Metrics.Framerate);
                 append_table("Frame Count", "%llu", m_Metrics.FrameCount);
                 append_table("Elapsed", "%llu", m_Metrics.Elapsed);

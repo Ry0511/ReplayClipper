@@ -21,6 +21,7 @@ namespace ReplayClipper {
     constexpr size_t NANOSECONDS_SCALE = 1e9;
 
     struct Metrics {
+        float LowFramerate;
         float Framerate;
         size_t FrameCount;
         size_t Elapsed;

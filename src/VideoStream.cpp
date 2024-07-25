@@ -331,8 +331,9 @@ namespace ReplayClipper {
         video.Pixels.resize(dest_size, 255);
 
         // Expected Input; We only care for the first of each
-        const int ls[4]{3 * width};
-        uint8_t* data[4]{video.Pixels.data()};
+        const int ls = 3 * width;
+        uint8_t* data = video.Pixels.data();
+
 
         sws_scale(
                 sws_ctx,
@@ -340,8 +341,8 @@ namespace ReplayClipper {
                 src_frame->linesize,
                 0,
                 src_frame->height,
-                data,
-                ls
+                &data,
+                &ls
         );
 
         sws_freeContext(sws_ctx);
@@ -441,6 +442,12 @@ namespace ReplayClipper {
         ~FramePool() = default;
 
       public:
+        int ActualMaxSize() const noexcept {
+            // One element is reserved, that is, when (head == tail) the queue is empty, thus if
+            // (head + 1) == tail then we have ambiguity in state.
+            return m_PoolSize - 1;
+        }
+
         int MaxPoolSize() const noexcept {
             return m_PoolSize;
         }
@@ -527,8 +534,8 @@ namespace ReplayClipper {
         }
 
         ~Impl() {
-            m_IsAlive = false;
             std::unique_lock guard{m_Mutex};
+            m_IsAlive = false;
             guard.unlock();
             m_Cond.notify_all();
             if (m_PoolThread.joinable()) {
@@ -640,8 +647,6 @@ namespace ReplayClipper {
       private:
         static void ImplPoolThread(Impl* impl) noexcept {
 
-            // TODO: Implement a better partial blocking system; Note that Seeking needs to be strongly synchronised.
-
             while (true) {
 
                 std::unique_lock guard{impl->m_Mutex};
@@ -656,7 +661,7 @@ namespace ReplayClipper {
                 }
 
                 // Push 'N' Frames
-                int frames_to_get = (impl->m_FramePool.MaxPoolSize() - 1) - impl->m_FramePool.CurrentSize();
+                int frames_to_get = (impl->m_FramePool.ActualMaxSize()) - impl->m_FramePool.CurrentSize();
                 for (int i = 0; i < frames_to_get; ++i) {
                     Frame frame = impl->NextFrameInternal();
                     bool ok = impl->m_FramePool.Enqueue(frame);

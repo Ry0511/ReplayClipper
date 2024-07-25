@@ -88,12 +88,15 @@ namespace ReplayClipper {
 
     class VideoStream {
 
+      public:
+        constexpr static int DEFAULT_POOL_SIZE = 16;
+
       private:
         class Impl;
         std::unique_ptr<Impl> m_Impl;
 
       public:
-        VideoStream(int pool_size = 10);
+        VideoStream(int pool_size = DEFAULT_POOL_SIZE);
         ~VideoStream();
 
       public:
